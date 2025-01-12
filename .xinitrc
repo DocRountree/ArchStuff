@@ -9,6 +9,8 @@ xrandr --output HDMI-0 --mode 3440x1440 --rate 100.00
 
 # Run programs
 sxhkd &
+xscreensaver &
+picom &
 
 # Run dwm
 exec dwm
