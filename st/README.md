@@ -1,1 +1,1 @@
-My st application and configuration files
+My st config and application files
