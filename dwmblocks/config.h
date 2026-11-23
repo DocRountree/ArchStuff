@@ -1,0 +1,29 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// String used to delimit block outputs in the status.
+#define DELIMITER "   "
+
+// Maximum number of Unicode characters that a block can output.
+#define MAX_BLOCK_OUTPUT_LENGTH 45
+
+// Control whether blocks are clickable.
+#define CLICKABLE_BLOCKS 1
+
+// Control whether a leading delimiter should be prepended to the status.
+#define LEADING_DELIMITER 0
+
+// Control whether a trailing delimiter should be appended to the status.
+#define TRAILING_DELIMITER 0
+
+// Define blocks for the status feed as X(icon, cmd, interval, signal).
+// Scripts live in ~/.local/bin and print their own icons; every block has a
+// signal so it is clickable (dwm statuscmd passes the button as BLOCK_BUTTON).
+#define BLOCKS(X)             \
+    X("", "sb-cpu", 2, 1)     \
+    X("", "sb-memory", 5, 2)  \
+    X("", "sb-network", 10, 3) \
+    X("", "sb-volume", 2, 4)  \
+    X("", "sb-clock", 1, 5)
+
+#endif  // CONFIG_H

@@ -1,0 +1,18 @@
+#!/bin/sh
+# Connection type and local IPv4 address of the default route.
+# Left click: interfaces and routes.
+case $BLOCK_BUTTON in
+	1) sb-popup network 120x16 --hold sh -c 'ip -br -c address; echo; ip route' ;;
+esac
+
+dev=$(ip route show default 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }')
+if [ -z "$dev" ]; then
+	printf '%s offline\n' "󰖪"
+	exit 0
+fi
+addr=$(ip -4 -br address show dev "$dev" | awk '{ sub(/\/.*/, "", $3); print $3 }')
+case $dev in
+	wl*) icon="󰖩" ;;
+	*)   icon="󰈀" ;;
+esac
+printf '%s %s\n' "$icon" "${addr:-$dev}"

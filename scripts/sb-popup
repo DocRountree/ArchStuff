@@ -1,0 +1,21 @@
+#!/bin/sh
+# sb-popup NAME COLSxROWS [--hold] command...
+# Open a small floating terminal just under the top-right of the bar (dwm floats
+# windows titled "sb-popup"). Clicking the same block again closes its popup;
+# clicking another block replaces it. --hold keeps the output on screen until a
+# key is pressed.
+name=$1 geom=$2; shift 2
+hold=0
+[ "$1" = --hold ] && { hold=1; shift; }
+
+# same popup already open: close it (toggle)
+pkill -f "^st -t sb-popup -n sbp-$name " && exit 0
+# another popup open: close it and open this one instead
+pkill -f '^st -t sb-popup '
+
+if [ "$hold" = 1 ]; then
+	setsid -f st -t sb-popup -n "sbp-$name" -g "${geom}-12+34" -e bash -c \
+		'"$@"; printf "\n\033[2m(press any key to close)\033[0m"; read -rsn1' bash "$@" >/dev/null 2>&1
+else
+	setsid -f st -t sb-popup -n "sbp-$name" -g "${geom}-12+34" -e "$@" >/dev/null 2>&1
+fi
