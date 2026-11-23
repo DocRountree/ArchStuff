@@ -2,13 +2,16 @@
 # dmenu 5.4 + greenleaf.patch: centred over a blurred, darkened snapshot of the screen,
 # large centred text entry with a horizontal result row beneath it (no box or border),
 # fuzzy + keyword matching, and mouse support (hover, click, wheel).
-# dwm still passes its colours and list font on the command line.
+# dmenu_run uses app mode (-a): desktop apps in the first row, terminal apps, developer tools
+# and other commands in a dimmer second row, tag search via desktop entries and the tags
+# file (installed to /etc/dmenu-greenleaf/tags), and launch history.
+# dwm still passes its colours; fonts come from config.h (dwm's -fn is ignored).
 # To change it: edit ~/dmenu on its greenleaf branch, then regenerate the patch with
 #   git -C ~/dmenu diff master greenleaf > greenleaf.patch
 # and update the checksum below.
 pkgname=dmenu-greenleaf
 pkgver=5.4
-pkgrel=2
+pkgrel=3
 _commit=7175c4880bac3d2a2d4a6262b59193f0a38e2fdb
 pkgdesc="Dynamic menu for X, Greenleaf edition"
 arch=('x86_64')
@@ -19,8 +22,10 @@ makedepends=('git')
 provides=('dmenu')
 conflicts=('dmenu')
 source=("dmenu::git+https://git.suckless.org/dmenu#commit=${_commit}"
-        'greenleaf.patch')
-sha256sums=('SKIP' 'c15d1dcd658c43bb75372188f27ded79413f64c46c715cb1d96ae3ba5b1a1aa0')
+        'greenleaf.patch'
+        'tags')
+backup=('etc/dmenu-greenleaf/tags')
+sha256sums=('SKIP' '391525f672153f5362b5d81e54c80e74ff08b249edf0294e089279fcf90c5384' '3d87a1b25defa23cefdde2fe4b1853e0934f189e6435393096dd4607ec5003c3')
 
 prepare() {
   cd dmenu
@@ -36,4 +41,5 @@ package() {
   cd dmenu
   make PREFIX=/usr DESTDIR="$pkgdir" install
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$srcdir/tags" "$pkgdir/etc/dmenu-greenleaf/tags"
 }
