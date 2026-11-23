@@ -1,0 +1,37 @@
+# Maintainer: Greenleaf
+# st 0.9.3 (upstream st.c) + official alpha patch, with the Greenleaf config.h (alpha 0.8).
+pkgname=st-greenleaf
+pkgver=0.9.3
+pkgrel=1
+_commit=688f70add0d1da8a416bf7df763328d694a24a3a
+pkgdesc="Simple terminal for X, Greenleaf edition"
+arch=('x86_64')
+url="https://st.suckless.org"
+license=('MIT')
+depends=('libx11' 'libxft' 'freetype2' 'fontconfig' 'ttf-liberation-mono-nerd')
+makedepends=('git' 'ncurses')
+provides=('st')
+conflicts=('st')
+source=("st::git+https://git.suckless.org/st#commit=${_commit}"
+        'st-alpha-20240814-a0274bc.diff'
+        'config.h')
+sha256sums=('SKIP' '562f6a4baedeb89c8b6dfb2c2f14a69f9327fa8b71a5093e70219e39794b8d42' 'd4a12b09f81cc09fc1ee3cc8d815c48834a7af39a312c3fe6e82e02cd55bbbda')
+
+prepare() {
+  cd st
+  patch -Np1 -i "$srcdir/st-alpha-20240814-a0274bc.diff"
+  cp "$srcdir/config.h" config.h
+  # ncurses already ships the st terminfo entries; don't run tic outside $pkgdir.
+  sed -i '/tic /d' Makefile
+}
+
+build() {
+  cd st
+  make X11INC=/usr/include/X11 X11LIB=/usr/lib/X11
+}
+
+package() {
+  cd st
+  make PREFIX=/usr DESTDIR="$pkgdir" install
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

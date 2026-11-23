@@ -1,0 +1,11 @@
+NAME="Greenleaf"
+PRETTY_NAME="Greenleaf"
+ID=greenleaf
+ID_LIKE=arch
+BUILD_ID=rolling
+ANSI_COLOR="38;2;64;92;40"
+HOME_URL="https://github.com/DocRountree/ArchStuff"
+DOCUMENTATION_URL="https://github.com/DocRountree/ArchStuff"
+SUPPORT_URL="https://github.com/DocRountree/ArchStuff/issues"
+BUG_REPORT_URL="https://github.com/DocRountree/ArchStuff/issues"
+LOGO=greenleaf

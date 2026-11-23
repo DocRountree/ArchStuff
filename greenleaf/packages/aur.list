@@ -1,0 +1,9 @@
+# AUR packages built into the local [greenleaf] repo, in build order.
+# tools/build-repo.sh shows each PKGBUILD change for review before building it.
+ckbcomp
+calamares
+yay
+lightcraft
+photocraft
+# Check Google's terms before distributing an ISO that contains this:
+google-earth-pro

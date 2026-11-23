@@ -1,0 +1,43 @@
+# Maintainer: Greenleaf
+# Everything that makes an installed system "Greenleaf": session, status bar, branding, defaults.
+# Wallpapers come from greenleaf/wallpapers/ (copied in by tools/build-repo.sh).
+pkgname=greenleaf-base
+pkgver=2026.12.01
+pkgrel=1
+pkgdesc="Greenleaf session, branding and defaults"
+arch=('any')
+url="https://github.com/DocRountree/ArchStuff"
+license=('0BSD')
+depends=('dwm-greenleaf' 'st-greenleaf' 'dmenu-greenleaf'
+         'xorg-server' 'xorg-xinit' 'xorg-xrandr' 'xorg-xsetroot'
+         'feh' 'picom' 'xscreensaver' 'network-manager-applet'
+         'pipewire-pulse' 'wireplumber' 'zram-generator'
+         'ttf-nerd-fonts-symbols' 'ttf-liberation-mono-nerd' 'ttf-dejavu')
+backup=('etc/systemd/zram-generator.conf')
+source=('greenleaf-session' 'greenleaf-statusbar' 'greenleaf.desktop' 'xinitrc'
+        'os-release' 'greenleaf-os-release.hook' 'zram-generator.conf')
+sha256sums=(
+  'c78e98129c937e37d2743ce5fef235312cf3cec6b2ecbfb66e4772fb8962c9b3'
+  '7dffa34229083fac7cd8a4f4e920f20b18589fac4e295c47d46a7c6cacc3eac3'
+  '6986db7bb9f0a351f56d65a37bbeb1612e4c0782d17b16c16706a74b08539061'
+  'fba74d256fd37d80e4c5f88cd993250a59c8b9dbef33cefc9172b4b224e526bf'
+  '033ccb9b4efa8c52630445a9cebb5b664ddef6d1aab468589f4ff044190fa90a'
+  '6432330181f194c92a55d1fd99f0174af537ffd1077c8365ded26e794a13ea90'
+  '79a838e167bf718ad05f7a4eb5a2e129afdc8a470ba932501b4846dfb5460c23'
+)
+
+package() {
+  install -Dm755 greenleaf-session   "$pkgdir/usr/bin/greenleaf-session"
+  install -Dm755 greenleaf-statusbar "$pkgdir/usr/bin/greenleaf-statusbar"
+  install -Dm644 greenleaf.desktop   "$pkgdir/usr/share/xsessions/greenleaf.desktop"
+  install -Dm644 xinitrc             "$pkgdir/etc/skel/.xinitrc"
+  install -Dm644 os-release          "$pkgdir/usr/share/greenleaf/os-release"
+  install -Dm644 greenleaf-os-release.hook "$pkgdir/usr/share/libalpm/hooks/greenleaf-os-release.hook"
+  install -Dm644 zram-generator.conf "$pkgdir/etc/systemd/zram-generator.conf"
+
+  install -dm755 "$pkgdir/usr/share/backgrounds/greenleaf"
+  if [[ -d "$startdir/wallpapers" ]]; then
+    find "$startdir/wallpapers" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+      -exec install -m644 -t "$pkgdir/usr/share/backgrounds/greenleaf" {} +
+  fi
+}

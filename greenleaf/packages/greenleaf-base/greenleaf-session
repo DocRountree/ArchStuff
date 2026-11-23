@@ -1,0 +1,30 @@
+#!/bin/sh
+# Starts the Greenleaf desktop and execs dwm.
+# Installed system: run by ~/.xinitrc (startx). Live ISO: run by SDDM's "Greenleaf" session.
+# Personal additions go in ~/.config/greenleaf/autostart (an executable script).
+
+xrandr --auto
+
+walls=/usr/share/backgrounds/greenleaf
+if [ -n "$(find "$walls" -maxdepth 1 -type f 2>/dev/null | head -n1)" ]; then
+    feh --no-fehbg --bg-fill --randomize "$walls"
+else
+    xsetroot -solid '#405c28'
+fi
+
+greenleaf-statusbar &
+picom &
+nm-applet &
+
+if [ -d /run/archiso ]; then
+    # Live session: offer the installer straight away.
+    greenleaf-installer &
+else
+    xscreensaver -no-splash &
+fi
+
+if [ -x "$HOME/.config/greenleaf/autostart" ]; then
+    "$HOME/.config/greenleaf/autostart" &
+fi
+
+exec dwm
