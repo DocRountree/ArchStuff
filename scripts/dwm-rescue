@@ -1,0 +1,155 @@
+#!/usr/bin/python3 -I
+"""dwm-rescue: Ctrl+Alt+Delete unfreezes a stuck dwm session.
+
+When dwm hangs while it is holding back mouse/keyboard input (click-to-focus
+uses a synchronous grab), X queues every key and click, including its own
+shortcuts, so nothing inside X can help. This service reads the keyboards
+directly from the kernel instead. On Ctrl+Alt+Delete, while the X session's
+virtual terminal is on screen, it:
+
+  1. saves a snapshot of dwm's and Xorg's state to /var/log/dwm-rescue/
+  2. sends dwm SIGHUP, so it restarts in place (restartsig patch); that drops
+     whatever it was holding and windows stay open.
+
+Only the Ctrl, Alt and Delete keys are looked at; all other input is ignored.
+
+Usage: dwm-rescue [--dry-run] [--vt ttyN] [device ...]
+  --dry-run   only print what would happen
+  --vt        virtual terminal of the X session (default tty1)
+  device      input devices to read (default: every keyboard with a Delete key)
+"""
+import glob
+import os
+import select
+import struct
+import subprocess
+import sys
+import time
+
+EV_KEY = 1
+KEY_DELETE, KEY_KPDOT = 111, 83
+CTRL = {29, 97}   # KEY_LEFTCTRL, KEY_RIGHTCTRL
+ALT = {56, 100}   # KEY_LEFTALT, KEY_RIGHTALT
+EVENT = struct.Struct('llHHi')  # struct input_event on 64-bit Linux
+LOGDIR = '/var/log/dwm-rescue'
+COOLDOWN = 3.0
+
+
+def has_key(event_path, code):
+    """True if the input device advertises key `code` in its capabilities."""
+    name = os.path.basename(event_path)
+    try:
+        with open(f'/sys/class/input/{name}/device/capabilities/key') as f:
+            words = f.read().split()
+    except OSError:
+        return False
+    bits = 0
+    for w in words:  # most significant word first, 64 bits each
+        bits = (bits << 64) | int(w, 16)
+    return bool(bits >> code & 1)
+
+
+def keyboards():
+    return sorted(p for p in glob.glob('/dev/input/event*') if has_key(p, KEY_DELETE))
+
+
+def active_vt():
+    try:
+        with open('/sys/class/tty/tty0/active') as f:
+            return f.read().strip()
+    except OSError:
+        return ''
+
+
+def snapshot():
+    """Record what dwm and Xorg are doing, for diagnosing the freeze later."""
+    os.makedirs(LOGDIR, exist_ok=True)
+    path = os.path.join(LOGDIR, time.strftime('freeze-%Y%m%d-%H%M%S.log'))
+    with open(path, 'w') as out:
+        for prog in ('dwm', 'Xorg', 'dwmblocks'):
+            for pid in subprocess.run(['pidof', prog], capture_output=True, text=True).stdout.split():
+                out.write(f'=== {prog} pid {pid}\n')
+                for item in ('status', 'wchan', 'syscall', 'stack'):
+                    try:
+                        with open(f'/proc/{pid}/{item}') as f:
+                            data = f.read()
+                    except OSError as e:
+                        data = f'({e})'
+                    out.write(f'--- {item}\n{data.rstrip()}\n')
+                try:
+                    out.write('--- open fds\n' + '\n'.join(
+                        sorted(os.readlink(f'/proc/{pid}/fd/{fd}') for fd in os.listdir(f'/proc/{pid}/fd'))) + '\n')
+                except OSError:
+                    pass
+        out.write('=== processes by CPU\n')
+        out.write(subprocess.run(['ps', '-eo', 'pid,stat,pcpu,pmem,etime,comm', '--sort=-pcpu'],
+                                 capture_output=True, text=True).stdout[:4000])
+        out.write('=== memory\n' + open('/proc/meminfo').read()[:1500])
+    return path
+
+
+def rescue(dry_run, vt):
+    if active_vt() != vt:
+        print(f'ctrl+alt+delete on {active_vt()}, not {vt}: ignored', flush=True)
+        return
+    if dry_run:
+        print('ctrl+alt+delete: would snapshot and restart dwm', flush=True)
+        return
+    try:
+        path = snapshot()
+        print(f'snapshot saved to {path}', flush=True)
+    except Exception as e:  # never let diagnostics block the rescue
+        print(f'snapshot failed: {e}', flush=True)
+    r = subprocess.run(['pkill', '-HUP', '-x', 'dwm'])
+    print('sent SIGHUP to dwm' if r.returncode == 0 else 'dwm is not running', flush=True)
+
+
+def main():
+    args = sys.argv[1:]
+    dry_run = '--dry-run' in args
+    vt = 'tty1'
+    if '--vt' in args:
+        vt = args[args.index('--vt') + 1]
+    fixed = [a for i, a in enumerate(args) if not a.startswith('--') and (i == 0 or args[i - 1] != '--vt')]
+
+    fds = {}       # path -> fd
+    held = set()   # modifier keys currently down (any keyboard)
+    last = 0.0
+    next_scan = 0.0
+    while True:
+        if time.monotonic() >= next_scan:  # pick up keyboards plugged in later
+            for p in (fixed or keyboards()):
+                if p not in fds:
+                    try:
+                        fds[p] = os.open(p, os.O_RDONLY | os.O_NONBLOCK)
+                    except OSError:
+                        pass
+            next_scan = time.monotonic() + (3600 if fixed else 10)
+        if not fds:
+            time.sleep(1)
+            continue
+        ready, _, _ = select.select(list(fds.values()), [], [], 10)
+        for fd in ready:
+            try:
+                data = os.read(fd, EVENT.size * 64)
+            except OSError:  # device unplugged
+                path = next(p for p, f in fds.items() if f == fd)
+                os.close(fd)
+                del fds[path]
+                continue
+            if not data and fixed:
+                return  # end of a test input file
+            for off in range(0, len(data) - EVENT.size + 1, EVENT.size):
+                _, _, etype, code, value = EVENT.unpack_from(data, off)
+                if etype != EV_KEY:
+                    continue
+                if code in CTRL or code in ALT:
+                    (held.add if value else held.discard)(code)
+                elif code in (KEY_DELETE, KEY_KPDOT) and value == 1:
+                    if held & CTRL and held & ALT and time.monotonic() - last > COOLDOWN:
+                        last = time.monotonic()
+                        rescue(dry_run, vt)
+
+
+if __name__ == '__main__':
+    main()
