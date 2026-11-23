@@ -22,7 +22,7 @@
 #define BLOCKS(X)             \
     X("", "sb-cpu", 2, 1)     \
     X("", "sb-memory", 5, 2)  \
-    X("", "sb-network", 10, 3) \
+    X("", "sb-network", 2, 3) \
     X("", "sb-volume", 2, 4)  \
     X("", "sb-clock", 1, 5)
 

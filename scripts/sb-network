@@ -1,6 +1,6 @@
 #!/bin/sh
-# Connection type and local IPv4 address of the default route.
-# Left click: interfaces and routes.
+# Download / upload speed on the default-route interface, since the last update.
+# Left click: interfaces, addresses and routes.
 case $BLOCK_BUTTON in
 	1) sb-popup network 120x16 --hold sh -c 'ip -br -c address; echo; ip route' ;;
 esac
@@ -10,9 +10,33 @@ if [ -z "$dev" ]; then
 	printf '%s offline\n' "󰖪"
 	exit 0
 fi
-addr=$(ip -4 -br address show dev "$dev" | awk '{ sub(/\/.*/, "", $3); print $3 }')
-case $dev in
-	wl*) icon="󰖩" ;;
-	*)   icon="󰈀" ;;
-esac
-printf '%s %s\n' "$icon" "${addr:-$dev}"
+
+stats=/sys/class/net/$dev/statistics
+read -r rx < "$stats/rx_bytes"
+read -r tx < "$stats/tx_bytes"
+now=$(date +%s%N)
+state=${XDG_RUNTIME_DIR:-/tmp}/sb-network.$(id -u)
+
+rxrate=0 txrate=0
+if [ -r "$state" ]; then
+	read -r pdev pnow prx ptx < "$state"
+	if [ "$pdev" = "$dev" ]; then
+		ms=$(( (now - pnow) / 1000000 ))
+		if [ "$ms" -gt 0 ]; then
+			rxrate=$(( (rx - prx) * 1000 / ms ))
+			txrate=$(( (tx - ptx) * 1000 / ms ))
+		fi
+	fi
+fi
+echo "$dev $now $rx $tx" > "$state"
+
+# bytes per second -> short human form: 512B, 34K, 1.2M, 12M, 1.1G
+human() {
+	awk -v b="$1" 'BEGIN {
+		if (b < 0) b = 0
+		split("B K M G", u, " "); i = 1
+		while (b >= 1024 && i < 4) { b /= 1024; i++ }
+		if (i > 2 && b < 10) printf "%.1f%s", b, u[i]; else printf "%d%s", b, u[i]
+	}'
+}
+printf '%s %s %s %s\n' "󰇚" "$(human "$rxrate")" "󰕒" "$(human "$txrate")"
