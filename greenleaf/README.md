@@ -23,14 +23,24 @@ Design decisions and their reasons: [docs/decisions.md](docs/decisions.md).
 
 ## Downloads
 
-[Releases](../../releases) have the ISO and every package. The packages also work as a pacman
-repo (unsigned, for now) on an existing Arch install:
+[Releases](../../releases) have the ISO and every package (pre-releases while Greenleaf is a
+work in progress).
+
+The ISO is bigger than GitHub's 2 GiB limit per file, so it comes in two parts. Join them and
+check the result:
+
+```bash
+cat greenleaf-*-x86_64.iso.part0 greenleaf-*-x86_64.iso.part1 > greenleaf.iso
+sha256sum greenleaf.iso   # compare with the .iso line in SHA256SUMS
+```
+
+The packages also work as a pacman repo (unsigned, for now) on an existing Arch install:
 
 ```ini
 # /etc/pacman.conf
 [greenleaf]
 SigLevel = Optional TrustAll
-Server = https://github.com/DocRountree/Greenleaf/releases/latest/download
+Server = https://github.com/DocRountree/Greenleaf/releases/download/2026.11.23
 ```
 
 ## Layout
