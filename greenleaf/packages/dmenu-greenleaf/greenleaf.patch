@@ -1,0 +1,953 @@
+diff --git a/config.def.h b/config.def.h
+index 1edb647..82808b0 100644
+--- a/config.def.h
++++ b/config.def.h
+@@ -1,10 +1,13 @@
+ /* See LICENSE file for copyright and license details. */
+ /* Default settings; can be overriden by command line. */
+ 
+-static int topbar = 1;                      /* -b  option; if 0, dmenu appears at bottom     */
+-/* -fn option overrides fonts[0]; default X11 font or font set */
++/* -fn option overrides fonts[0]; font used for the result list */
+ static const char *fonts[] = {
+-	"monospace:size=10"
++	"monospace:size=12"
++};
++/* -ifn option overrides inputfonts[0]; larger font for the prompt and text entry */
++static const char *inputfonts[] = {
++	"monospace:size=24"
+ };
+ static const char *prompt      = NULL;      /* -p  option; prompt to the left of input field */
+ static const char *colors[SchemeLast][2] = {
+@@ -13,9 +16,19 @@ static const char *colors[SchemeLast][2] = {
+ 	[SchemeSel] = { "#eeeeee", "#005577" },
+ 	[SchemeOut] = { "#000000", "#00ffff" },
+ };
+-/* -l option; if nonzero, dmenu uses vertical list with given number of lines */
++/* -l option; 0 shows results in a horizontal row beneath the text entry,
++ * a positive number shows that many rows in a vertical list instead */
+ static unsigned int lines      = 0;
+ 
++/* centred layout */
++static unsigned int panelwidth = 1400; /* -pw option; width of the centred area in px (capped to 90% of the monitor) */
++static unsigned int rowpad     = 6;    /* extra vertical padding above and below each row */
++
++/* background blur: dmenu snapshots the screen, blurs and darkens it behind the panel */
++static int blurradius          = 3;    /* -br option; blur radius (0 disables the blurred backdrop) */
++static int blurscale           = 4;    /* downscale factor before blurring; higher = softer and faster */
++static int blurdim             = 55;   /* backdrop brightness in percent (100 = not darkened) */
++
+ /*
+  * Characters not considered part of a word while deleting words
+  * for example: " /?\"&[]"
+diff --git a/dmenu.1 b/dmenu.1
+index ed0e442..2f89ddd 100644
+--- a/dmenu.1
++++ b/dmenu.1
+@@ -42,14 +42,17 @@ which lists programs in the user's $PATH and runs the result in their $SHELL.
+ .SH OPTIONS
+ .TP
+ .B \-b
+-dmenu appears at the bottom of the screen.
++accepted for compatibility; dmenu is always centred on the screen.
+ .TP
+ .B \-f
+ dmenu grabs the keyboard before reading stdin if not reading from a tty. This
+ is faster, but will lock up X until stdin reaches end\-of\-file.
+ .TP
+ .B \-i
+-dmenu matches menu items case insensitively.
++dmenu matches menu items case insensitively (the default).
++.TP
++.B \-s
++dmenu matches menu items case sensitively.
+ .TP
+ .BI \-l " lines"
+ dmenu lists items vertically, with the given number of lines.
+@@ -62,7 +65,16 @@ from 0.
+ defines the prompt to be displayed to the left of the input field.
+ .TP
+ .BI \-fn " font"
+-defines the font or font set used.
++defines the font or font set used for the results.
++.TP
++.BI \-ifn " font"
++defines the larger font used for the prompt and text entry.
++.TP
++.BI \-pw " width"
++width in pixels of the centred search area.
++.TP
++.BI \-br " radius"
++blur radius of the darkened screen snapshot shown behind dmenu; 0 disables it.
+ .TP
+ .BI \-nb " color"
+ defines the normal background color.
+@@ -91,8 +103,12 @@ prints version information to stdout, then exits.
+ .BI \-w " windowid"
+ embed into windowid.
+ .SH USAGE
+-dmenu is completely controlled by the keyboard.  Items are selected using the
+-arrow keys, page up, page down, home, and end.
++Typed text is split into space-separated keywords that may appear in any
++order. Each keyword matches an item as a substring or, failing that, as a fuzzy
++subsequence (e.g. "gerth" matches google-earth-pro); results are ranked by match
++quality. Items are selected using the arrow keys, page up, page down, home, and
++end, or with the mouse: hover to select, click to choose, scroll the wheel to
++move through the results. Clicking outside the results closes dmenu.
+ .TP
+ .B Tab
+ Copy the selected item to the input field.
+diff --git a/dmenu.c b/dmenu.c
+index 363d19f..19d50ea 100644
+--- a/dmenu.c
++++ b/dmenu.c
+@@ -1,6 +1,7 @@
+ /* See LICENSE file for copyright and license details. */
+ #include <ctype.h>
+ #include <locale.h>
++#include <stdint.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+@@ -10,6 +11,7 @@
+ 
+ #include <X11/Xlib.h>
+ #include <X11/Xatom.h>
++#include <X11/cursorfont.h>
+ #include <X11/Xutil.h>
+ #ifdef XINERAMA
+ #include <X11/extensions/Xinerama.h>
+@@ -31,12 +33,15 @@ struct item {
+ 	char *text;
+ 	struct item *left, *right;
+ 	int out;
++	int score;
++	int rx, ry, rw, rh; /* where the item was last drawn, for mouse hit-testing */
+ };
+ 
+ static char text[BUFSIZ] = "";
+ static char *embed;
+-static int bh, mw, mh;
+-static int inputw = 0, promptw;
++static int bh, ibh, mw, mh;   /* row height, input row height, monitor size */
++static int pw, ph, px, py;   /* panel size and offset inside the window */
++static int promptw;
+ static int lrpad; /* sum of left and right padding */
+ static size_t cursor;
+ static struct item *items = NULL;
+@@ -50,12 +55,14 @@ static Window root, parentwin, win;
+ static XIC xic;
+ 
+ static Drw *drw;
++static Fnt *normfnt, *bigfnt;
+ static Clr *scheme[SchemeLast];
++static Pixmap bgpix = None;
++static Cursor cursor_arrow = None;
+ 
+ #include "config.h"
+ 
+-static int (*fstrncmp)(const char *, const char *, size_t) = strncmp;
+-static char *(*fstrstr)(const char *, const char *) = strstr;
++static int casesens = 0; /* -s: case-sensitive matching (default is insensitive) */
+ 
+ static unsigned int
+ textw_clamp(const char *str, unsigned int n)
+@@ -85,13 +92,13 @@ calcoffsets(void)
+ 	if (lines > 0)
+ 		n = lines * bh;
+ 	else
+-		n = mw - (promptw + inputw + TEXTW("<") + TEXTW(">"));
++		n = pw - TEXTW("<") - TEXTW(">");
+ 	/* calculate which items will begin the next page and previous page */
+ 	for (i = 0, next = curr; next; next = next->right)
+-		if ((i += (lines > 0) ? bh : textw_clamp(next->text, n)) > n)
++		if ((i += (lines > 0) ? bh : (int)textw_clamp(next->text, n)) > n)
+ 			break;
+ 	for (i = 0, prev = curr; prev && prev->left; prev = prev->left)
+-		if ((i += (lines > 0) ? bh : textw_clamp(prev->left->text, n)) > n)
++		if ((i += (lines > 0) ? bh : (int)textw_clamp(prev->left->text, n)) > n)
+ 			break;
+ }
+ 
+@@ -101,6 +108,13 @@ cleanup(void)
+ 	size_t i;
+ 
+ 	XUngrabKeyboard(dpy, CurrentTime);
++	if (bgpix != None)
++		XFreePixmap(dpy, bgpix);
++	if (cursor_arrow != None)
++		XFreeCursor(dpy, cursor_arrow);
++	drw_setfontset(drw, normfnt);
++	if (bigfnt != normfnt)
++		drw_fontset_free(bigfnt);
+ 	for (i = 0; i < SchemeLast; i++)
+ 		drw_scm_free(drw, scheme[i], 2);
+ 	for (i = 0; items && items[i].text; ++i)
+@@ -129,66 +143,96 @@ cistrstr(const char *h, const char *n)
+ 	return NULL;
+ }
+ 
++static char *(*fstrstr)(const char *, const char *) = cistrstr;
++
+ static int
+ drawitem(struct item *item, int x, int y, int w)
+ {
++	item->rx = x;
++	item->ry = y;
++	item->rw = w;
++	item->rh = bh;
+ 	if (item == sel)
+ 		drw_setscheme(drw, scheme[SchemeSel]);
+ 	else if (item->out)
+ 		drw_setscheme(drw, scheme[SchemeOut]);
+ 	else
+ 		drw_setscheme(drw, scheme[SchemeNorm]);
++	/* only highlighted items get a background box */
++	if (item == sel || item->out)
++		drw_rect(drw, x, y, w, bh, 1, 1);
+ 
+ 	return drw_text(drw, x, y, w, bh, lrpad / 2, item->text, 0);
+ }
+ 
++static void
++mappanel(void)
++{
++	XCopyArea(dpy, drw->drawable, win, drw->gc, 0, 0, pw, ph, px, py);
++	XSync(dpy, False);
++}
++
+ static void
+ drawmenu(void)
+ {
+-	unsigned int curpos;
++	unsigned int curpos, tw, promptgap;
+ 	struct item *item;
+-	int x = 0, y = 0, w;
++	int x, y, w, lw, rw;
+ 
+-	drw_setscheme(drw, scheme[SchemeNorm]);
+-	drw_rect(drw, 0, 0, mw, mh, 1, 1);
++	/* the panel has no box of its own: start from the blurred backdrop
++	 * behind it, or a plain background when there is no backdrop */
++	if (bgpix != None)
++		XCopyArea(dpy, bgpix, drw->drawable, drw->gc, px, py, pw, ph, 0, 0);
++	else {
++		drw_setscheme(drw, scheme[SchemeNorm]);
++		drw_rect(drw, 0, 0, pw, ph, 1, 1);
++	}
+ 
++	/* prompt and text entry, centred, in the larger input font */
++	drw_setfontset(drw, bigfnt);
++	promptgap = (prompt && *prompt) ? lrpad / 2 : 0;
++	tw = TEXTW(text);
++	w = MIN((int)(promptw + promptgap + tw), pw);
++	x = (pw - w) / 2;
++	y = 0;
+ 	if (prompt && *prompt) {
+ 		drw_setscheme(drw, scheme[SchemeSel]);
+-		x = drw_text(drw, x, 0, promptw, bh, lrpad / 2, prompt, 0);
++		x = drw_text(drw, x, y, promptw, ibh, lrpad / 2, prompt, 0) + promptgap;
+ 	}
+-	/* draw input field */
+-	w = (lines > 0 || !matches) ? mw - x : inputw;
++	w = pw - x;
+ 	drw_setscheme(drw, scheme[SchemeNorm]);
+-	drw_text(drw, x, 0, w, bh, lrpad / 2, text, 0);
++	drw_text(drw, x, y, w, ibh, lrpad / 2, text, 0);
+ 
+-	curpos = TEXTW(text) - TEXTW(&text[cursor]);
+-	if ((curpos += lrpad / 2 - 1) < w) {
+-		drw_setscheme(drw, scheme[SchemeNorm]);
+-		drw_rect(drw, x + curpos, 2, 2, bh - 4, 1, 0);
+-	}
++	curpos = tw - TEXTW(&text[cursor]);
++	if ((curpos += lrpad / 2 - 1) < (unsigned int)w)
++		drw_rect(drw, x + curpos, y + rowpad, 2, ibh - 2 * rowpad, 1, 0);
++	drw_setfontset(drw, normfnt);
+ 
++	y += ibh + rowpad;
+ 	if (lines > 0) {
+-		/* draw vertical list */
+-		for (item = curr; item != next; item = item->right)
+-			drawitem(item, x, y += bh, mw - x);
++		/* vertical result list */
++		for (item = curr; item != next; item = item->right, y += bh)
++			drawitem(item, 0, y, pw);
+ 	} else if (matches) {
+-		/* draw horizontal list */
+-		x += inputw;
+-		w = TEXTW("<");
++		/* horizontal result row, centred beneath the text entry */
++		lw = TEXTW("<");
++		rw = TEXTW(">");
++		for (w = 0, item = curr; item != next; item = item->right)
++			w += textw_clamp(item->text, pw - lw - rw);
++		x = lw + MAX(0, (pw - lw - rw - w) / 2);
+ 		if (curr->left) {
+ 			drw_setscheme(drw, scheme[SchemeNorm]);
+-			drw_text(drw, x, 0, w, bh, lrpad / 2, "<", 0);
++			drw_text(drw, 0, y, lw, bh, lrpad / 2, "<", 0);
+ 		}
+-		x += w;
+ 		for (item = curr; item != next; item = item->right)
+-			x = drawitem(item, x, 0, textw_clamp(item->text, mw - x - TEXTW(">")));
++			x = drawitem(item, x, y, textw_clamp(item->text, pw - x - rw));
+ 		if (next) {
+-			w = TEXTW(">");
+ 			drw_setscheme(drw, scheme[SchemeNorm]);
+-			drw_text(drw, mw - w, 0, w, bh, lrpad / 2, ">", 0);
++			drw_text(drw, pw - rw, y, rw, bh, lrpad / 2, ">", 0);
+ 		}
+ 	}
+-	drw_map(drw, win, 0, 0, mw, mh);
++
++	mappanel();
+ }
+ 
+ static void
+@@ -226,56 +270,144 @@ grabkeyboard(void)
+ 	die("cannot grab keyboard");
+ }
+ 
++static inline int
++foldc(int c)
++{
++	return casesens ? c : tolower((unsigned char)c);
++}
++
++static int
++isboundary(const char *str, const char *p)
++{
++	return p == str || strchr(" -_./:", p[-1]) || (isupper((unsigned char)*p) && islower((unsigned char)p[-1]));
++}
++
++/*
++ * fuzzy subsequence score of pattern pat (length n) in str starting at start:
++ * returns -1 if not every pattern character appears in order.
++ */
++static int
++fuzzyfrom(const char *str, const char *start, const char *pat, size_t n)
++{
++	const char *s = start, *last = NULL;
++	size_t i;
++	int score = 0;
++
++	for (i = 0; i < n; i++, s++) {
++		for (; *s && foldc(*s) != foldc(pat[i]); s++)
++			;
++		if (!*s)
++			return -1;
++		score += 16;
++		if (last && s == last + 1)
++			score += 24;                     /* consecutive characters */
++		else if (last)
++			score -= MIN(s - last - 1, 15);  /* gap penalty */
++		if (isboundary(str, s))
++			score += (s == str) ? 32 : 20;   /* start of item / start of a word */
++		last = s;
++	}
++	return score;
++}
++
++static int
++fuzzyscore(const char *str, const char *pat)
++{
++	size_t n = strlen(pat);
++	const char *s;
++	int best = -1, sc;
++
++	/* try every occurrence of the first pattern character as the anchor */
++	for (s = str; *s; s++) {
++		if (foldc(*s) != foldc(*pat))
++			continue;
++		if ((sc = fuzzyfrom(str, s, pat, n)) < 0)
++			break; /* later anchors cannot match either */
++		best = MAX(best, sc);
++	}
++	return best;
++}
++
++/*
++ * score an item against the space-separated keywords: every keyword must
++ * appear (in any order) either as a substring or, failing that, as a fuzzy
++ * subsequence. substring hits always outrank fuzzy hits.
++ */
++static int
++scoreitem(const char *str, char **tokv, int tokc)
++{
++	const char *p;
++	size_t len = strlen(str);
++	int i, sc, total = 0;
++
++	for (i = 0; i < tokc; i++) {
++		if ((p = fstrstr(str, tokv[i]))) {
++			total += 1000 - MIN(p - str, 50);
++			if (p == str)
++				total += 400;
++			else if (isboundary(str, p))
++				total += 200;
++			if (strlen(tokv[i]) == len)
++				total += 600; /* the keyword is the whole item */
++		} else if ((sc = fuzzyscore(str, tokv[i])) >= 0)
++			total += sc;
++		else
++			return -1;
++	}
++	return total - (int)MIN(len, 100) / 4; /* prefer shorter items */
++}
++
++static int
++itemcmp(const void *a, const void *b)
++{
++	const struct item *ia = *(struct item *const *)a, *ib = *(struct item *const *)b;
++
++	if (ia->score != ib->score)
++		return ib->score - ia->score;
++	return (ia < ib) ? -1 : (ia > ib); /* keep input order for ties */
++}
++
+ static void
+ match(void)
+ {
+ 	static char **tokv = NULL;
+ 	static int tokn = 0;
++	static struct item **sorted = NULL;
++	static size_t sortedn = 0;
+ 
+ 	char buf[sizeof text], *s;
+-	int i, tokc = 0;
+-	size_t len, textsize;
+-	struct item *item, *lprefix, *lsubstr, *prefixend, *substrend;
++	int tokc = 0;
++	size_t i, n = 0;
++	struct item *item;
+ 
+ 	strcpy(buf, text);
+-	/* separate input text into tokens to be matched individually */
++	/* separate input text into keywords to be matched individually */
+ 	for (s = strtok(buf, " "); s; tokv[tokc - 1] = s, s = strtok(NULL, " "))
+ 		if (++tokc > tokn && !(tokv = realloc(tokv, ++tokn * sizeof *tokv)))
+ 			die("cannot realloc %zu bytes:", tokn * sizeof *tokv);
+-	len = tokc ? strlen(tokv[0]) : 0;
+ 
+-	matches = lprefix = lsubstr = matchend = prefixend = substrend = NULL;
+-	textsize = strlen(text) + 1;
++	for (item = items; item && item->text; item++)
++		n++;
++	if (n > sortedn) {
++		if (!(sorted = realloc(sorted, n * sizeof *sorted)))
++			die("cannot realloc %zu bytes:", n * sizeof *sorted);
++		sortedn = n;
++	}
++
++	n = 0;
+ 	for (item = items; item && item->text; item++) {
+-		for (i = 0; i < tokc; i++)
+-			if (!fstrstr(item->text, tokv[i]))
+-				break;
+-		if (i != tokc) /* not all tokens match */
++		if ((item->score = tokc ? scoreitem(item->text, tokv, tokc) : 0) < 0)
+ 			continue;
+-		/* exact matches go first, then prefixes, then substrings */
+-		if (!tokc || !fstrncmp(text, item->text, textsize))
+-			appenditem(item, &matches, &matchend);
+-		else if (!fstrncmp(tokv[0], item->text, len))
+-			appenditem(item, &lprefix, &prefixend);
+-		else
+-			appenditem(item, &lsubstr, &substrend);
+-	}
+-	if (lprefix) {
+-		if (matches) {
+-			matchend->right = lprefix;
+-			lprefix->left = matchend;
+-		} else
+-			matches = lprefix;
+-		matchend = prefixend;
+-	}
+-	if (lsubstr) {
+-		if (matches) {
+-			matchend->right = lsubstr;
+-			lsubstr->left = matchend;
+-		} else
+-			matches = lsubstr;
+-		matchend = substrend;
++		if (tokc && !(casesens ? strcmp : strcasecmp)(text, item->text))
++			item->score += 5000; /* exact match of the whole input */
++		sorted[n++] = item;
+ 	}
++	if (tokc)
++		qsort(sorted, n, sizeof *sorted, itemcmp);
++
++	matches = matchend = NULL;
++	for (i = 0; i < n; i++)
++		appenditem(sorted[i], &matches, &matchend);
+ 	curr = sel = matches;
+ 	calcoffsets();
+ }
+@@ -320,6 +452,24 @@ movewordedge(int dir)
+ 	}
+ }
+ 
++static void
++selectup(void)
++{
++	if (sel && sel->left && (sel = sel->left)->right == curr) {
++		curr = prev;
++		calcoffsets();
++	}
++}
++
++static void
++selectdown(void)
++{
++	if (sel && sel->right && (sel = sel->right) == next) {
++		curr = next;
++		calcoffsets();
++	}
++}
++
+ static void
+ keypress(XKeyEvent *ev)
+ {
+@@ -468,10 +618,7 @@ insert:
+ 		/* fallthrough */
+ 	case XK_Up:
+ 	case XK_KP_Up:
+-		if (sel && sel->left && (sel = sel->left)->right == curr) {
+-			curr = prev;
+-			calcoffsets();
+-		}
++		selectup();
+ 		break;
+ 	case XK_Next:
+ 	case XK_KP_Next:
+@@ -508,10 +655,7 @@ insert:
+ 		/* fallthrough */
+ 	case XK_Down:
+ 	case XK_KP_Down:
+-		if (sel && sel->right && (sel = sel->right) == next) {
+-			curr = next;
+-			calcoffsets();
+-		}
++		selectdown();
+ 		break;
+ 	case XK_Tab:
+ 		if (!sel)
+@@ -527,6 +671,71 @@ draw:
+ 	drawmenu();
+ }
+ 
++/* return the visible item under panel-relative coordinates, if any */
++static struct item *
++itemat(int x, int y)
++{
++	struct item *item;
++
++	for (item = curr; item && item != next; item = item->right)
++		if (x >= item->rx && x < item->rx + item->rw &&
++		    y >= item->ry && y < item->ry + item->rh)
++			return item;
++	return NULL;
++}
++
++static void
++buttonpress(XButtonEvent *ev)
++{
++	struct item *item;
++	int x = ev->x - px, y = ev->y - py;
++
++	if ((x < 0 || y < 0 || x >= pw || y >= ph) &&
++	    ev->button != Button4 && ev->button != Button5) {
++		/* click on the blurred backdrop closes dmenu; the wheel scrolls anywhere */
++		if (!embed) {
++			cleanup();
++			exit(1);
++		}
++		return;
++	}
++	switch (ev->button) {
++	case Button1:
++		if (!(item = itemat(x, y)))
++			return;
++		puts(item->text);
++		if (!(ev->state & ControlMask)) {
++			cleanup();
++			exit(0);
++		}
++		sel = item;
++		item->out = 1;
++		break;
++	case Button2: /* paste primary selection into the text entry */
++		XConvertSelection(dpy, XA_PRIMARY, utf8, utf8, win, CurrentTime);
++		return;
++	case Button4: /* wheel up */
++		selectup();
++		break;
++	case Button5: /* wheel down */
++		selectdown();
++		break;
++	default:
++		return;
++	}
++	drawmenu();
++}
++
++static void
++motion(XMotionEvent *ev)
++{
++	struct item *item;
++	if (!(item = itemat(ev->x - px, ev->y - py)) || item == sel)
++		return;
++	sel = item;
++	drawmenu();
++}
++
+ static void
+ paste(void)
+ {
+@@ -588,7 +797,13 @@ run(void)
+ 			exit(1);
+ 		case Expose:
+ 			if (ev.xexpose.count == 0)
+-				drw_map(drw, win, 0, 0, mw, mh);
++				mappanel();
++			break;
++		case ButtonPress:
++			buttonpress(&ev.xbutton);
++			break;
++		case MotionNotify:
++			motion(&ev.xmotion);
+ 			break;
+ 		case FocusIn:
+ 			/* regrab focus from parent window */
+@@ -610,6 +825,127 @@ run(void)
+ 	}
+ }
+ 
++/* separable box blur over an interleaved RGB buffer, with clamped edges */
++static void
++boxblur(unsigned int *buf, unsigned int *tmp, int w, int h, int r)
++{
++	int x, y, c, i, d = 2 * r + 1;
++	unsigned int acc;
++
++#define PX(b, xx, yy, cc) (b)[((yy) * w + (xx)) * 3 + (cc)]
++	for (y = 0; y < h; y++)
++		for (c = 0; c < 3; c++) {
++			for (acc = 0, i = -r; i <= r; i++)
++				acc += PX(buf, MAX(0, MIN(i, w - 1)), y, c);
++			for (x = 0; x < w; x++) {
++				PX(tmp, x, y, c) = acc / d;
++				acc += PX(buf, MIN(x + r + 1, w - 1), y, c);
++				acc -= PX(buf, MAX(x - r, 0), y, c);
++			}
++		}
++	for (x = 0; x < w; x++)
++		for (c = 0; c < 3; c++) {
++			for (acc = 0, i = -r; i <= r; i++)
++				acc += PX(tmp, x, MAX(0, MIN(i, h - 1)), c);
++			for (y = 0; y < h; y++) {
++				PX(buf, x, y, c) = acc / d;
++				acc += PX(tmp, x, MIN(y + r + 1, h - 1), c);
++				acc -= PX(tmp, x, MAX(y - r, 0), c);
++			}
++		}
++#undef PX
++}
++
++/*
++ * snapshot the screen area behind the menu, then downscale, blur, darken and
++ * upscale it into bgpix, which becomes the window background. on any failure
++ * bgpix stays None and dmenu falls back to a plain centred panel.
++ */
++static void
++makebackdrop(int x, int y, int w, int h)
++{
++	XImage *img;
++	unsigned int *buf, *tmp, one = 1, r, g, b, n;
++	int f = MAX(blurscale, 1), sw, sh, sx, sy, ix, iy, i, fast, *x0, *wx;
++	unsigned long p;
++
++	if (blurradius <= 0 || w <= 0 || h <= 0)
++		return;
++	if (!(img = XGetImage(dpy, root, x, y, w, h, AllPlanes, ZPixmap)))
++		return;
++	if (img->bits_per_pixel != 32 || img->red_mask != 0xff0000 ||
++	    img->green_mask != 0xff00 || img->blue_mask != 0xff) {
++		XDestroyImage(img);
++		return;
++	}
++	fast = (img->byte_order == LSBFirst) == (*(unsigned char *)&one == 1);
++#define GETPX(xx, yy) (fast ? (unsigned long)((uint32_t *)(img->data + (yy) * img->bytes_per_line))[xx] : XGetPixel(img, xx, yy))
++
++	sw = (w + f - 1) / f;
++	sh = (h + f - 1) / f;
++	buf = ecalloc((size_t)sw * sh * 3, sizeof *buf);
++	tmp = ecalloc((size_t)sw * sh * 3, sizeof *tmp);
++	x0 = ecalloc(w, sizeof *x0);
++	wx = ecalloc(w, sizeof *wx);
++
++	/* downscale by averaging f x f blocks, applying the dim factor */
++	for (sy = 0; sy < sh; sy++)
++		for (sx = 0; sx < sw; sx++) {
++			r = g = b = n = 0;
++			for (iy = sy * f; iy < MIN(sy * f + f, h); iy++)
++				for (ix = sx * f; ix < MIN(sx * f + f, w); ix++, n++) {
++					p = GETPX(ix, iy);
++					r += (p >> 16) & 0xff;
++					g += (p >> 8) & 0xff;
++					b += p & 0xff;
++				}
++			i = (sy * sw + sx) * 3;
++			buf[i]     = r * blurdim / (100 * n);
++			buf[i + 1] = g * blurdim / (100 * n);
++			buf[i + 2] = b * blurdim / (100 * n);
++		}
++
++	/* three box passes approximate a gaussian */
++	for (i = 0; i < 3; i++)
++		boxblur(buf, tmp, sw, sh, blurradius);
++
++	/* bilinear upscale back into the image, 8-bit fixed point weights */
++	for (ix = 0; ix < w; ix++) {
++		int fx = ((2 * ix + 1) * 256) / (2 * f) - 128;
++		fx = MAX(fx, 0);
++		x0[ix] = MIN(fx >> 8, sw - 1);
++		wx[ix] = (x0[ix] + 1 < sw) ? (fx & 0xff) : 0;
++	}
++	for (iy = 0; iy < h; iy++) {
++		int fy = ((2 * iy + 1) * 256) / (2 * f) - 128, y0, y1, wy;
++		fy = MAX(fy, 0);
++		y0 = MIN(fy >> 8, sh - 1);
++		y1 = MIN(y0 + 1, sh - 1);
++		wy = (y1 != y0) ? (fy & 0xff) : 0;
++		for (ix = 0; ix < w; ix++) {
++			unsigned int c[3], k, *a = &buf[(y0 * sw + x0[ix]) * 3], *d = &buf[(y1 * sw + x0[ix]) * 3];
++			int bx = wx[ix] ? 3 : 0;
++			for (k = 0; k < 3; k++)
++				c[k] = ((a[k] * (256 - wx[ix]) + a[k + bx] * wx[ix]) * (256 - wy) +
++				        (d[k] * (256 - wx[ix]) + d[k + bx] * wx[ix]) * wy) >> 16;
++			p = (unsigned long)c[0] << 16 | c[1] << 8 | c[2];
++			if (fast)
++				((uint32_t *)(img->data + iy * img->bytes_per_line))[ix] = p;
++			else
++				XPutPixel(img, ix, iy, p);
++		}
++	}
++#undef GETPX
++
++	bgpix = XCreatePixmap(dpy, root, w, h, DefaultDepth(dpy, screen));
++	XPutImage(dpy, bgpix, DefaultGC(dpy, screen), img, 0, 0, 0, 0, w, h);
++	XDestroyImage(img);
++	free(buf);
++	free(tmp);
++	free(x0);
++	free(wx);
++}
++
+ static void
+ setup(void)
+ {
+@@ -622,7 +958,7 @@ setup(void)
+ 	XClassHint ch = {"dmenu", "dmenu"};
+ #ifdef XINERAMA
+ 	XineramaScreenInfo *info;
+-	Window pw;
++	Window pwin;
+ 	int a, di, n, area = 0;
+ #endif
+ 	/* init appearance */
+@@ -633,9 +969,8 @@ setup(void)
+ 	utf8 = XInternAtom(dpy, "UTF8_STRING", False);
+ 
+ 	/* calculate menu geometry */
+-	bh = drw->fonts->h + 2;
+-	lines = MAX(lines, 0);
+-	mh = (lines + 1) * bh;
++	bh = normfnt->h + 2 * rowpad;
++	ibh = bigfnt->h + 2 * rowpad;
+ #ifdef XINERAMA
+ 	i = 0;
+ 	if (parentwin == root && (info = XineramaQueryScreens(dpy, &n))) {
+@@ -645,11 +980,11 @@ setup(void)
+ 		else if (w != root && w != PointerRoot && w != None) {
+ 			/* find top-level window containing current input focus */
+ 			do {
+-				if (XQueryTree(dpy, (pw = w), &dw, &w, &dws, &du) && dws)
++				if (XQueryTree(dpy, (pwin = w), &dw, &w, &dws, &du) && dws)
+ 					XFree(dws);
+-			} while (w != root && w != pw);
++			} while (w != root && w != pwin);
+ 			/* find xinerama screen with which the window intersects most */
+-			if (XGetWindowAttributes(dpy, pw, &wa))
++			if (XGetWindowAttributes(dpy, pwin, &wa))
+ 				for (j = 0; j < n; j++)
+ 					if ((a = INTERSECT(wa.x, wa.y, wa.width, wa.height, info[j])) > area) {
+ 						area = a;
+@@ -663,8 +998,9 @@ setup(void)
+ 					break;
+ 
+ 		x = info[i].x_org;
+-		y = info[i].y_org + (topbar ? 0 : info[i].height - mh);
++		y = info[i].y_org;
+ 		mw = info[i].width;
++		mh = info[i].height;
+ 		XFree(info);
+ 	} else
+ #endif
+@@ -673,20 +1009,45 @@ setup(void)
+ 			die("could not get embedding window attributes: 0x%lx",
+ 			    parentwin);
+ 		x = 0;
+-		y = topbar ? 0 : wa.height - mh;
++		y = 0;
+ 		mw = wa.width;
++		mh = wa.height;
+ 	}
++	/* centred panel: text entry row, separator, then the result rows */
++	pw = MIN((int)panelwidth, mw * 9 / 10);
++	ph = MIN(ibh + rowpad + (lines > 0 ? lines : 1) * bh, mh);
++	drw_setfontset(drw, bigfnt);
+ 	promptw = (prompt && *prompt) ? TEXTW(prompt) - lrpad / 4 : 0;
+-	inputw = mw / 3; /* input width: ~33% of monitor width */
++	drw_setfontset(drw, normfnt);
+ 	match();
+ 
++	/* the window covers the whole monitor showing the blurred backdrop,
++	 * or, without a backdrop, just the panel itself */
++	if (!embed)
++		makebackdrop(x, y, mw, mh);
++	if (bgpix != None) {
++		px = (mw - pw) / 2;
++		py = (mh - ph) / 2;
++	} else {
++		x += (mw - pw) / 2;
++		y += (mh - ph) / 2;
++		mw = pw;
++		mh = ph;
++		px = py = 0;
++	}
++
+ 	/* create menu window */
++	cursor_arrow = XCreateFontCursor(dpy, XC_left_ptr);
+ 	swa.override_redirect = True;
+ 	swa.background_pixel = scheme[SchemeNorm][ColBg].pixel;
+-	swa.event_mask = ExposureMask | KeyPressMask | VisibilityChangeMask;
++	swa.background_pixmap = bgpix;
++	swa.cursor = cursor_arrow;
++	swa.event_mask = ExposureMask | KeyPressMask | VisibilityChangeMask |
++	                 ButtonPressMask | PointerMotionMask;
+ 	win = XCreateWindow(dpy, root, x, y, mw, mh, 0,
+ 	                    CopyFromParent, CopyFromParent, CopyFromParent,
+-	                    CWOverrideRedirect | CWBackPixel | CWEventMask, &swa);
++	                    CWOverrideRedirect | CWCursor | CWEventMask |
++	                    (bgpix != None ? CWBackPixmap : CWBackPixel), &swa);
+ 	XSetClassHint(dpy, win, &ch);
+ 
+ 	/* input methods */
+@@ -707,15 +1068,17 @@ setup(void)
+ 		}
+ 		grabfocus();
+ 	}
+-	drw_resize(drw, mw, mh);
++	drw_resize(drw, pw, ph);
++	drw->nobg = 1;
+ 	drawmenu();
+ }
+ 
+ static void
+ usage(void)
+ {
+-	die("usage: dmenu [-bfiv] [-l lines] [-p prompt] [-fn font] [-m monitor]\n"
+-	    "             [-nb color] [-nf color] [-sb color] [-sf color] [-w windowid]");
++	die("usage: dmenu [-bfisv] [-l lines] [-p prompt] [-fn font] [-ifn font] [-m monitor]\n"
++	    "             [-pw width] [-br radius] [-nb color] [-nf color] [-sb color]\n"
++	    "             [-sf color] [-w windowid]");
+ }
+ 
+ int
+@@ -729,14 +1092,15 @@ main(int argc, char *argv[])
+ 		if (!strcmp(argv[i], "-v")) {      /* prints version information */
+ 			puts("dmenu-"VERSION);
+ 			exit(0);
+-		} else if (!strcmp(argv[i], "-b")) /* appears at the bottom of the screen */
+-			topbar = 0;
++		} else if (!strcmp(argv[i], "-b")) /* accepted for compatibility; dmenu is always centred */
++			;
+ 		else if (!strcmp(argv[i], "-f"))   /* grabs keyboard before reading stdin */
+ 			fast = 1;
+-		else if (!strcmp(argv[i], "-i")) { /* case-insensitive item matching */
+-			fstrncmp = strncasecmp;
+-			fstrstr = cistrstr;
+-		} else if (i + 1 == argc)
++		else if (!strcmp(argv[i], "-i"))   /* case-insensitive matching (the default) */
++			casesens = 0;
++		else if (!strcmp(argv[i], "-s"))   /* case-sensitive matching */
++			casesens = 1;
++		else if (i + 1 == argc)
+ 			usage();
+ 		/* these options take one argument */
+ 		else if (!strcmp(argv[i], "-l"))   /* number of lines in vertical list */
+@@ -745,8 +1109,14 @@ main(int argc, char *argv[])
+ 			mon = atoi(argv[++i]);
+ 		else if (!strcmp(argv[i], "-p"))   /* adds prompt to left of input field */
+ 			prompt = argv[++i];
+-		else if (!strcmp(argv[i], "-fn"))  /* font or font set */
++		else if (!strcmp(argv[i], "-fn"))  /* font or font set for the result list */
+ 			fonts[0] = argv[++i];
++		else if (!strcmp(argv[i], "-ifn")) /* font for the prompt and text entry */
++			inputfonts[0] = argv[++i];
++		else if (!strcmp(argv[i], "-pw"))  /* panel width in pixels */
++			panelwidth = atoi(argv[++i]);
++		else if (!strcmp(argv[i], "-br"))  /* backdrop blur radius, 0 disables */
++			blurradius = atoi(argv[++i]);
+ 		else if (!strcmp(argv[i], "-nb"))  /* normal background color */
+ 			colors[SchemeNorm][ColBg] = argv[++i];
+ 		else if (!strcmp(argv[i], "-nf"))  /* normal foreground color */
+@@ -776,9 +1146,15 @@ main(int argc, char *argv[])
+ 		die("could not get embedding window attributes: 0x%lx",
+ 		    parentwin);
+ 	drw = drw_create(dpy, screen, root, wa.width, wa.height);
+-	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
++	if (!(bigfnt = drw_fontset_create(drw, inputfonts, LENGTH(inputfonts))))
++		fputs("warning: input font could not be loaded, using list font\n", stderr);
++	if (!(normfnt = drw_fontset_create(drw, fonts, LENGTH(fonts))))
+ 		die("no fonts could be loaded.");
+-	lrpad = drw->fonts->h;
++	if (!bigfnt)
++		bigfnt = normfnt;
++	if (casesens)
++		fstrstr = strstr;
++	lrpad = normfnt->h;
+ 
+ #ifdef __OpenBSD__
+ 	if (pledge("stdio rpath", NULL) == -1)
+diff --git a/drw.c b/drw.c
+index 9fdd1a4..be10c9e 100644
+--- a/drw.c
++++ b/drw.c
+@@ -269,8 +269,10 @@ drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, unsigned int lp
+ 	if (!render) {
+ 		w = invert ? invert : ~invert;
+ 	} else {
+-		XSetForeground(drw->dpy, drw->gc, drw->scheme[invert ? ColFg : ColBg].pixel);
+-		XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
++		if (!drw->nobg) {
++			XSetForeground(drw->dpy, drw->gc, drw->scheme[invert ? ColFg : ColBg].pixel);
++			XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
++		}
+ 		if (w < lpad)
+ 			return x + w;
+ 		d = XftDrawCreate(drw->dpy, drw->drawable,
+diff --git a/drw.h b/drw.h
+index 2ed77be..61ca994 100644
+--- a/drw.h
++++ b/drw.h
+@@ -24,6 +24,7 @@ typedef struct {
+ 	GC gc;
+ 	Clr *scheme;
+ 	Fnt *fonts;
++	int nobg; /* drw_text draws glyphs only, leaving the background as is */
+ } Drw;
+ 
+ /* Drawable abstraction */
