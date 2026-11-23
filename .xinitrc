@@ -19,6 +19,7 @@ xscreensaver &
 picom &
 gnome-keyring &
 gnome-keyring-daemon &
+(sleep 5; signal-desktop --start-in-tray) &   # after dwm, so its system tray exists
 
 # Run dwm
 exec dwm
