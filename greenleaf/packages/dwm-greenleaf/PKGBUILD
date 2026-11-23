@@ -1,10 +1,12 @@
 # Maintainer: Greenleaf
 # dwm 6.8 + fibonacci layout + gaps (from ~/dwm) + systray, with the Greenleaf config.h.
+# greenleaf.patch also carries the suckless restartsig and preserveonrestart patches:
+# Alt+Ctrl+Shift+Q (or kill -HUP) restarts dwm in place, windows keep their tags.
 # systray.patch is the official dwm-systray-6.8.diff, adapted to apply after greenleaf.patch.
 # To change the config: edit config.h here, then run tools/build-repo.sh.
 pkgname=dwm-greenleaf
 pkgver=6.8
-pkgrel=3
+pkgrel=4
 _commit=f63cde9354504ee9cfecc07517c03736d0f90c26
 pkgdesc="Dynamic window manager for X, Greenleaf edition"
 arch=('x86_64')
@@ -18,7 +20,7 @@ source=("dwm::git+https://git.suckless.org/dwm#commit=${_commit}"
         'greenleaf.patch'
         'systray.patch'
         'config.h')
-sha256sums=('SKIP' 'fa1ea7cae640d8553604f9411aae5861aa99c857121228c5ea7765de907e8d58' 'a04636e7f5634c589f57d92dea00f2f071bf749f555d7c8405f63f933040e1ff' '1306d7b70b21f6e9881ec90e461b7519be797acaa447d4ea117572dc34d58ee6')
+sha256sums=('SKIP' '02ae5feee81d9a43b5790864d44f16c0692e7183f1fd7fb6a745104e460296f6' '6ce3b454f6f9dda3a867a6514c1b673f40b1bc61f2fd9624a3f2a198865f9abf' '759f1425d7012ff05ff34a899b9d280477befcacfc7357154dac3698a8ae08ea')
 
 prepare() {
   cd dwm

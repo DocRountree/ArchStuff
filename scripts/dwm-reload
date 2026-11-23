@@ -1,0 +1,32 @@
+#!/bin/sh
+# dwm-reload: rebuild dwm from source, install it, and restart the running
+# dwm in place. Windows stay open and keep their tags (restartsig +
+# preserveonrestart patches). If the build fails, nothing is installed and
+# the running dwm is left alone.
+#
+#   dwm-reload            # uses ~/dwm
+#   DWM_SRC=/path dwm-reload
+#
+# Same as pressing Alt+Ctrl+Shift+Q after installing by hand.
+set -e
+
+src=${DWM_SRC:-$HOME/dwm}
+cd "$src"
+
+# config.h pulls in fibonacci.c and friends, which make does not track,
+# so always rebuild from scratch. (Never use make -B: it would regenerate
+# config.h from config.def.h.)
+make clean >/dev/null
+make
+
+# sanity check the new binary before touching the running session
+./dwm -v 2>&1 | grep -q '^dwm-' || { echo "dwm-reload: new binary failed its self-test, not installing" >&2; exit 1; }
+
+sudo -A make install >/dev/null
+
+if pid=$(pidof -s dwm); then
+	kill -HUP "$pid"
+	echo "dwm-reload: installed and restarted dwm (pid $pid); takes effect within a second"
+else
+	echo "dwm-reload: installed; dwm is not running, nothing to restart"
+fi
