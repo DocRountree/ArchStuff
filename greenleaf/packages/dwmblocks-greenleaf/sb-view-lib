@@ -1,1 +1,50 @@
-../../../scripts/sb-view-lib
+# sb-view-lib: shared drawing helpers for the status bar popups
+# (sb-cpu-view, sb-gpu-view, sb-mem-view). Source it; don't run it.
+
+# colour by load: green < 50%, yellow < 80%, red above
+colour() { if [ "$1" -ge 80 ]; then printf '\033[31m'; elif [ "$1" -ge 50 ]; then printf '\033[33m'; else printf '\033[32m'; fi; }
+
+# bar PERCENT WIDTH: filled part coloured by load, the rest as a dim track
+bar() {
+	local p=${1:-0} w=$2 n full empty
+	[ "$p" -gt 100 ] && p=100
+	[ "$p" -lt 0 ] && p=0
+	n=$(( (p * w + 50) / 100 ))
+	printf -v full '%*s' "$n" ''
+	printf -v empty '%*s' "$((w - n))" ''
+	colour "$p"; printf '%s' "${full// /█}"
+	printf '\033[90m%s\033[0m' "${empty// /█}"
+}
+
+# pad TEXT WIDTH: print TEXT cut or padded to WIDTH characters
+# (counts characters, not bytes, so labels like "firefox ×10" line up)
+pad() {
+	local s=$1 w=$2
+	[ "${#s}" -gt "$w" ] && s="${s:0:w-1}…"
+	printf '%s%*s' "$s" "$((w - ${#s}))" ''
+}
+
+# awk function mapping helper process names to the program people know
+AWK_FRIENDLY='function friendly(n) {
+	if (n ~ /^(Isolated Web Co|Web Content|WebExtensions|RDD Process|Socket Process|Privileged Cont|Utility Process|GeckoMain|Isolated Servic|Forked Child)$/) return "firefox"
+	if (n ~ /^steam/) return "steam"
+	return n
+}'
+
+# row LABEL PERCENT VALUE: one aligned line: label column, bar, value
+LABELW=18 BARW=24
+row() { printf ' '; pad "$1" "$LABELW"; printf ' '; bar "$2" "$BARW"; printf ' %s\033[K\n' "$3"; }
+
+# human SIZE_IN_KIB: 512K, 34M, 1.2G
+human_kib() {
+	awk -v k="$1" 'BEGIN {
+		if (k >= 1048576) printf "%.1fG", k / 1048576
+		else if (k >= 1024) printf "%dM", k / 1024 + 0.5
+		else printf "%dK", k
+	}'
+}
+
+view_start() { export LC_ALL=${LC_ALL:-${LANG:-C.UTF-8}}; tput civis; trap 'tput cnorm' EXIT; clear; }
+view_footer() { printf '\033[K\n\033[90m q or Esc to close · refreshes every 2 s\033[0m\033[K'; tput ed; }
+# wait up to $1 seconds for a key; returns 1 if the view should close
+view_wait() { local key; read -rsn1 -t "$1" key && case $key in q|Q|$'\e') return 1 ;; esac; return 0; }

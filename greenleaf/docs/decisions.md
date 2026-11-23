@@ -104,5 +104,5 @@ AUR packages, built into the local `[greenleaf]` repo: see `packages/aur.list`.
 - **System tray:** dwm-greenleaf includes the official systray patch (`dwm-systray-6.8.diff`,
   three hunks adapted by hand to sit on top of the fibonacci and gaps patches), so `nm-applet`
   shows in the bar. Settings are the `systray*` lines in `packages/dwm-greenleaf/config.h`.
-- **google-earth-pro:** Google's terms may not allow redistribution inside an ISO. Consider
-  installing it on first boot instead of shipping it.
+- **google-earth-pro:** not shipped. Google's terms don't allow redistributing it, and the
+  ISO and package repo are public, so users install it from the AUR (`yay -S google-earth-pro`).

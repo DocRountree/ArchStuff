@@ -1,1 +1,9 @@
-../../../scripts/sb-gpu
+#!/bin/sh
+# GPU usage (NVIDIA). Left click: GPU usage view.
+case $BLOCK_BUTTON in
+	1) sb-popup gpu 62x18 sb-gpu-view ;;
+esac
+
+command -v nvidia-smi >/dev/null || exit 0   # no NVIDIA GPU: hide the block
+util=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null)
+printf '%s %3s%%\n' "󰢮" "${util:-?}"   # fixed width: the bar must not shift

@@ -1,1 +1,11 @@
-../../../scripts/sb-memory
+#!/bin/sh
+# Memory in use (total minus available). Left click: top, sorted by memory.
+case $BLOCK_BUTTON in
+	1) sb-popup memory 62x18 sb-mem-view ;;
+esac
+
+awk -v icon="󰍛" '
+	/^MemTotal:/     { total = $2 }
+	/^MemAvailable:/ { avail = $2 }
+	END { printf "%s %4.1fG\n", icon, (total - avail) / 1048576 }
+' /proc/meminfo
