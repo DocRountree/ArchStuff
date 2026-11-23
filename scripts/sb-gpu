@@ -1,0 +1,8 @@
+#!/bin/sh
+# GPU usage (NVIDIA). Left click: GPU usage view.
+case $BLOCK_BUTTON in
+	1) sb-popup gpu 62x18 sb-gpu-view ;;
+esac
+
+util=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null)
+printf '%s %s%%\n' "󰢮" "${util:-?}"

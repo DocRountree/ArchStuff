@@ -21,6 +21,7 @@
 // signal so it is clickable (dwm statuscmd passes the button as BLOCK_BUTTON).
 #define BLOCKS(X)             \
     X("", "sb-cpu", 2, 1)     \
+    X("", "sb-gpu", 2, 6)     \
     X("", "sb-memory", 5, 2)  \
     X("", "sb-network", 2, 3) \
     X("", "sb-volume", 2, 4)  \
