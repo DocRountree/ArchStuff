@@ -4,6 +4,8 @@ case $BLOCK_BUTTON in
 	1) sb-popup gpu 62x18 sb-gpu-view ;;
 esac
 
-command -v nvidia-smi >/dev/null || exit 0   # no NVIDIA GPU: hide the block
-util=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null)
-printf '%s %3s%%\n' "󰢮" "${util:-?}"   # fixed width: the bar must not shift
+# No NVIDIA GPU (or no driver loaded): hide the block. nvidia-smi prints its
+# errors on stdout, so only a plain number counts.
+util=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -n1)
+case $util in ''|*[!0-9]*) exit 0 ;; esac
+printf '%s %3s%%\n' "󰢮" "$util"   # fixed width: the bar must not shift
