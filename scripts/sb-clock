@@ -4,4 +4,4 @@ case $BLOCK_BUTTON in
 	1) sb-popup clock 66x11 --hold cal -3 ;;
 esac
 
-printf '%s %s\n' "󰥔" "$(date '+%A, %e %B %H:%M')"
+date '+%A, %e %B %H:%M'

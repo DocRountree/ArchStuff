@@ -5,7 +5,7 @@ static const unsigned int borderpx  = 0;        /* border pixel of windows */
 static const unsigned int gappx     = 10;	/* gaps between windows */
 static const unsigned int snap      = 32;       /* snap pixel */
 static const unsigned int systraypinning = 0;   /* 0: systray follows the selected monitor, >0: pin to monitor X */
-static const unsigned int systrayonleft = 1;    /* 0: systray in the right corner, >0: left of the status text */
+static const unsigned int systrayonleft = 0;    /* 0: systray in the right corner, >0: left of the status text */
 static const unsigned int systrayspacing = 2;   /* systray spacing */
 static const int systraypinningfailfirst = 1;   /* 1: if pinning fails, show systray on the first monitor */
 static const int showsystray        = 1;        /* 0 means no systray */
@@ -65,6 +65,8 @@ static const Layout layouts[] = {
 
 /* statuscmd: clicks on the status text are sent to this program (dwmblocks-async) */
 #define STATUSBAR "dwmblocks"
+/* the dwmblocks block with this signal (the clock) is drawn in the middle of the bar; 0 = off */
+static const int centerstatussig = 5;
 
 /* commands */
 static char dmenumon[2] = "0"; /* component of dmenucmd, manipulated in spawn() */

@@ -1,7 +1,7 @@
 #!/bin/sh
 # CPU usage since the previous update. Left click: top, sorted by CPU.
 case $BLOCK_BUTTON in
-	1) sb-popup cpu 110x30 top -o %CPU ;;
+	1) sb-popup cpu 60x19 sb-cpu-view ;;
 esac
 
 state=${XDG_RUNTIME_DIR:-/tmp}/sb-cpu.$(id -u)

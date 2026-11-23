@@ -275,6 +275,8 @@ static Systray *systray = NULL;
 static const char broken[] = "broken";
 static char stext[256];
 static int statusw;
+static char ctext[256];      /* centred status section (see centerstatussig) */
+static int ctextx = -1, ctextw = 0; /* where it was last drawn on selmon's bar */
 static int statussig;
 static pid_t statuspid = -1;
 static int screen;
@@ -484,7 +486,10 @@ buttonpress(XEvent *e)
 			arg.ui = 1 << i;
 		} else if (ev->x < x + TEXTW(selmon->ltsymbol))
 			click = ClkLtSymbol;
-		else if (ev->x > selmon->ww - statusw - traywidthright(selmon)) {
+		else if (ctextx >= 0 && (int)ev->x >= ctextx && (int)ev->x < ctextx + ctextw) {
+			click = ClkStatusText;
+			statussig = centerstatussig;
+		} else if (ev->x > selmon->ww - statusw - traywidthright(selmon)) {
 			x = selmon->ww - statusw - traywidthright(selmon);
 			click = ClkStatusText;
 			statussig = 0;
@@ -876,6 +881,22 @@ drawbar(Monitor *m)
 	w = TEXTW(m->ltsymbol);
 	drw_setscheme(drw, scheme[SchemeNorm]);
 	x = drw_text(drw, x, 0, w, bh, lrpad / 2, m->ltsymbol, 0);
+
+	if (m == selmon && ctext[0]) {
+		int cw = TEXTW(ctext), cx = (m->ww - cw) / 2, endx = m->ww - tw - stw;
+
+		if (cx > x && cx + cw < endx) {
+			/* clear the area right of the centred text, then draw it */
+			drw_setscheme(drw, scheme[SchemeNorm]);
+			drw_rect(drw, cx, 0, endx - cx, bh, 1, 1);
+			drw_text(drw, cx, 0, cw, bh, lrpad / 2, ctext, 0);
+			ctextx = cx;
+			ctextw = cw;
+			tw = m->ww - stw - cx; /* the title ends where the centred text starts */
+		} else
+			ctextx = -1;
+	} else if (m == selmon)
+		ctextx = -1;
 
 	if ((w = m->ww - tw - stw - x - (showsystray && systrayonleft && m == systraytomon(m) ? (int)getsystraywidth() + lrpad / 2 : 0)) > bh) {
 		if (m->sel) {
@@ -2374,11 +2395,26 @@ updatesizehints(Client *c)
 void
 updatestatus(void)
 {
+	ctext[0] = '\0';
 	if (!gettextprop(root, XA_WM_NAME, stext, sizeof(stext))) {
 		strcpy(stext, "dwm-"VERSION);
 		statusw = TEXTW(stext) - lrpad + 2;
 	} else {
-		char *text, *s, ch;
+		char *text, *s, ch, *c, *e;
+
+		/* move the section marked by centerstatussig (statuscmd marker byte)
+		 * into ctext; it is drawn in the middle of the bar instead */
+		if (centerstatussig > 0 && centerstatussig < ' ' && (c = strchr(stext, centerstatussig))) {
+			for (e = c + 1; *e && (unsigned char)*e >= ' '; e++)
+				;
+			snprintf(ctext, sizeof ctext, "%.*s", (int)(e - c - 1), c + 1);
+			memmove(c, e, strlen(e) + 1);
+			/* drop the delimiter that was left in front of it */
+			for (e = c; e > stext && e[-1] == ' '; e--)
+				;
+			if (!*c)
+				*e = '\0';
+		}
 
 		statusw  = 0;
 		for (text = s = stext; *s; s++) {
