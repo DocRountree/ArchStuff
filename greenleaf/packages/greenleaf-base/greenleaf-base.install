@@ -1,0 +1,12 @@
+# Turn on services Greenleaf ships enabled (see /usr/lib/systemd/system-preset/80-greenleaf.preset).
+# "preset" respects any local override in /etc/systemd/system-preset/.
+post_install() {
+  systemctl preset dwm-rescue.service >/dev/null 2>&1 || true
+}
+
+post_upgrade() {
+  # only on the upgrade that first ships dwm-rescue
+  if [ "$(vercmp "$2" 2026.12.01-2)" -lt 0 ]; then
+    post_install
+  fi
+}

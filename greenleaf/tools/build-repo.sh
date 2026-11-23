@@ -14,7 +14,7 @@ repo=$build/repo/x86_64
 db=$repo/greenleaf.db.tar.zst
 export PKGDEST=$build/pkgdest SRCDEST=$build/sources BUILDDIR=$build/work
 
-local_pkgs=(dmenu-greenleaf st-greenleaf dwm-greenleaf greenleaf-base)
+local_pkgs=(dmenu-greenleaf st-greenleaf dwm-greenleaf dwmblocks-greenleaf greenleaf-base)
 mapfile -t aur_pkgs < <(grep -vE '^\s*(#|$)' "$root/packages/aur.list")
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }

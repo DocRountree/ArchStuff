@@ -1,0 +1,68 @@
+# Maintainer: Greenleaf
+# The Greenleaf status bar: dwmblocks-async plus the sb-* block scripts and their popups.
+# Blocks: CPU, GPU (NVIDIA only), memory, network down/up speed, volume, and the date and
+# time (centred by dwm-greenleaf). Every block is clickable; CPU, GPU and memory open usage
+# views, volume scrolls/mutes, network shows addresses, the clock shows a calendar.
+# The scripts are the ones in ArchStuff/scripts/ (symlinked here).
+pkgname=dwmblocks-greenleaf
+pkgver=r74.469e684
+pkgrel=1
+_commit=469e6841432693d81a17088706d99ef044a29936
+pkgdesc="Clickable dwm status bar, Greenleaf edition (dwmblocks-async)"
+arch=('x86_64')
+url="https://github.com/UtkarshVerma/dwmblocks-async"
+license=('GPL-2.0-only')
+depends=('libxcb' 'xcb-util' 'st-greenleaf' 'procps-ng' 'gawk' 'ncurses' 'iproute2'
+         'util-linux' 'libpulse' 'alsa-utils')
+optdepends=('nvidia-utils: GPU block and GPU usage view')
+makedepends=('git')
+provides=('dwmblocks')
+conflicts=('dwmblocks')
+_scripts=(sb-clock sb-cpu sb-cpu-view sb-gpu sb-gpu-view sb-memory sb-mem-view
+          sb-network sb-popup sb-volume sb-livehint)
+source=("dwmblocks::git+https://github.com/UtkarshVerma/dwmblocks-async#commit=${_commit}"
+        'unblock-signals.patch'
+        'config.h'
+        sb-view-lib "${_scripts[@]}")
+sha256sums=('addda50ae766c2e3514471012cdcd456239161cfb93444cba7c57a3e7249d6ce'
+            '23c87c3e435ae423ffedfa99e3489e113fc6601390ee02a9d91e5915438ab3df'
+            '03fcc348f2dac88b812514db0353cb0f5d47b292d7b219deb357eeae9c3e8e27'
+            '45e447209bceed8441dd9537ff4785403a884276b95c3a0143ec949222a48660'
+            'a417d5fc7c5d780d843f78bb45284b557dbc370a682690f6e5668515f11e94a4'
+            'a693b4131c5244778831621ea00bca9256d13b8b05514a1d8d5de6a6f2fccfb7'
+            'b72f3a7a87fe91cba82885aff3e4c667da4b524cf74c694dde312187d1f7a713'
+            '1f3ab3d69f5fd26242d7596304b96179ef5849430c30074755cbce3f45cac455'
+            'aaef4d7b927d1d7738bbb0885f19644b06519a267d4d28264181aa8a28d62d96'
+            '77d26802661b4f51b4387bac357c9454bd4cf362e76bc970f0c22534bced556b'
+            'd76bb420562d6321bf016f069d687f6fb3dee1343e4717b2f0cd5e7649f5fac4'
+            '8b38ee8d9ff0cc0cb2b8eb3dfbd72c2fb84d580a023c8b91ad4fa7fb724536cf'
+            '3372bcc3897d1e74d462b961b36dea0a8591f12145d3e90135550163bc8e8fd9'
+            '32efa5a12fca5827d25b95de7ec2a5775cdbd95107a0875e76d33818773c4bdf'
+            'f3b4bda76607a1527fc0374f267f834014f8bf7bfa303262b3f1627b27874b4c')
+
+pkgver() {
+  cd dwmblocks
+  printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd dwmblocks
+  # programs started from block clicks must not inherit dwmblocks' blocked signals
+  patch -Np1 -i "$srcdir/unblock-signals.patch"
+  cp "$srcdir/config.h" config.h
+}
+
+build() {
+  cd dwmblocks
+  make
+}
+
+package() {
+  cd dwmblocks
+  make PREFIX=/usr DESTDIR="$pkgdir" install
+  local s
+  for s in "${_scripts[@]}"; do
+    install -Dm755 "$srcdir/$s" "$pkgdir/usr/bin/$s"
+  done
+  install -Dm644 "$srcdir/sb-view-lib" "$pkgdir/usr/bin/sb-view-lib"   # sourced, not run
+}

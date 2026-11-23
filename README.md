@@ -12,7 +12,7 @@ installer. Design decisions live in [greenleaf/docs/decisions.md](greenleaf/docs
 
 | Path | What it is |
 | --- | --- |
-| `greenleaf/packages/` | PKGBUILDs for dwm, st, dmenu and `greenleaf-base`, plus `aur.list` |
+| `greenleaf/packages/` | PKGBUILDs for dwm, st, dmenu, the dwmblocks status bar and `greenleaf-base`, plus `aur.list` |
 | `greenleaf/profile/` | archiso profile overrides (packages, boot menus, live-only files) |
 | `greenleaf/wallpapers/` | Curated wallpapers shipped with the distro |
 | `greenleaf/tools/` | `build-repo.sh`, `build-iso.sh`, `check-secrets.sh` |

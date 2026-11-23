@@ -66,7 +66,7 @@ static const Layout layouts[] = {
 /* statuscmd: clicks on the status text are sent to this program, if it runs */
 #define STATUSBAR "dwmblocks"
 /* the dwmblocks block with this signal is drawn in the middle of the bar; 0 = off */
-static const int centerstatussig = 0;
+static const int centerstatussig = 5;   /* sb-clock */
 
 /* commands */
 static char dmenumon[2] = "0"; /* component of dmenucmd, manipulated in spawn() */

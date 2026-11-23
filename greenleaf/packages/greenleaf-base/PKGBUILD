@@ -3,37 +3,43 @@
 # Wallpapers come from greenleaf/wallpapers/ (copied in by tools/build-repo.sh).
 pkgname=greenleaf-base
 pkgver=2026.12.01
-pkgrel=1
+pkgrel=2
 pkgdesc="Greenleaf session, branding and defaults"
 arch=('any')
 url="https://github.com/DocRountree/ArchStuff"
 license=('0BSD')
-depends=('dwm-greenleaf' 'st-greenleaf' 'dmenu-greenleaf'
+depends=('dwm-greenleaf' 'st-greenleaf' 'dmenu-greenleaf' 'dwmblocks-greenleaf' 'python'
          'xorg-server' 'xorg-xinit' 'xorg-xrandr' 'xorg-xsetroot'
          'feh' 'picom' 'xscreensaver' 'network-manager-applet'
          'pipewire-pulse' 'wireplumber' 'zram-generator'
          'ttf-nerd-fonts-symbols' 'ttf-liberation-mono-nerd' 'ttf-dejavu')
 backup=('etc/systemd/zram-generator.conf')
-source=('greenleaf-session' 'greenleaf-statusbar' 'greenleaf.desktop' 'xinitrc'
-        'os-release' 'greenleaf-os-release.hook' 'zram-generator.conf')
-sha256sums=(
-  'c78e98129c937e37d2743ce5fef235312cf3cec6b2ecbfb66e4772fb8962c9b3'
-  '7dffa34229083fac7cd8a4f4e920f20b18589fac4e295c47d46a7c6cacc3eac3'
-  '6986db7bb9f0a351f56d65a37bbeb1612e4c0782d17b16c16706a74b08539061'
-  'fba74d256fd37d80e4c5f88cd993250a59c8b9dbef33cefc9172b4b224e526bf'
-  '033ccb9b4efa8c52630445a9cebb5b664ddef6d1aab468589f4ff044190fa90a'
-  '6432330181f194c92a55d1fd99f0174af537ffd1077c8365ded26e794a13ea90'
-  '79a838e167bf718ad05f7a4eb5a2e129afdc8a470ba932501b4846dfb5460c23'
-)
+install=greenleaf-base.install
+source=('greenleaf-session' 'greenleaf.desktop' 'xinitrc'
+        'os-release' 'greenleaf-os-release.hook' 'zram-generator.conf'
+        'dwm-rescue' 'dwm-rescue.service' '80-greenleaf.preset')
+sha256sums=('c521c590c35c8667dea48c2bd1b2986b9354327d8910b182c7b7cd0f0e0477bb'
+            '6986db7bb9f0a351f56d65a37bbeb1612e4c0782d17b16c16706a74b08539061'
+            'fba74d256fd37d80e4c5f88cd993250a59c8b9dbef33cefc9172b4b224e526bf'
+            '033ccb9b4efa8c52630445a9cebb5b664ddef6d1aab468589f4ff044190fa90a'
+            '6432330181f194c92a55d1fd99f0174af537ffd1077c8365ded26e794a13ea90'
+            '79a838e167bf718ad05f7a4eb5a2e129afdc8a470ba932501b4846dfb5460c23'
+            '1351e7b61c22c0bff789b85509fc21c970cba824e896cafb377525a962e82f8f'
+            '4f27a532780c00c48ab0947a58b28a4fec61688936338064a9717fe9e073a099'
+            '33fc810f2a75097f71cfb25092be319ca224627df639cd7b2b61565ed9bfa7ed')
 
 package() {
   install -Dm755 greenleaf-session   "$pkgdir/usr/bin/greenleaf-session"
-  install -Dm755 greenleaf-statusbar "$pkgdir/usr/bin/greenleaf-statusbar"
   install -Dm644 greenleaf.desktop   "$pkgdir/usr/share/xsessions/greenleaf.desktop"
   install -Dm644 xinitrc             "$pkgdir/etc/skel/.xinitrc"
   install -Dm644 os-release          "$pkgdir/usr/share/greenleaf/os-release"
   install -Dm644 greenleaf-os-release.hook "$pkgdir/usr/share/libalpm/hooks/greenleaf-os-release.hook"
   install -Dm644 zram-generator.conf "$pkgdir/etc/systemd/zram-generator.conf"
+
+  # Ctrl+Alt+Delete rescue for a frozen dwm session (root service reading the keyboards)
+  install -Dm755 dwm-rescue          "$pkgdir/usr/bin/dwm-rescue"
+  install -Dm644 dwm-rescue.service  "$pkgdir/usr/lib/systemd/system/dwm-rescue.service"
+  install -Dm644 80-greenleaf.preset "$pkgdir/usr/lib/systemd/system-preset/80-greenleaf.preset"
 
   install -dm755 "$pkgdir/usr/share/backgrounds/greenleaf"
   if [[ -d "$startdir/wallpapers" ]]; then

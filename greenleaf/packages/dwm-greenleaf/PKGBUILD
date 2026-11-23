@@ -6,7 +6,7 @@
 # To change the config: edit config.h here, then run tools/build-repo.sh.
 pkgname=dwm-greenleaf
 pkgver=6.8
-pkgrel=8
+pkgrel=9
 _commit=f63cde9354504ee9cfecc07517c03736d0f90c26
 pkgdesc="Dynamic window manager for X, Greenleaf edition"
 arch=('x86_64')
@@ -19,7 +19,9 @@ conflicts=('dwm')
 source=("dwm::git+https://git.suckless.org/dwm#commit=${_commit}"
         'greenleaf.patch'
         'config.h')
-sha256sums=('SKIP' '2654d7de4e6072a5f4889cb1e92d400bf0ff0bec3c68626e53a74bc73283f97f' '49183d7f9594b8532e8ce0a0833df09a8de3f2817ccc4a0dafce674a12fc1e40')
+sha256sums=('103e1fed4670f7ffe01f829fbcbc52c3d3eaff3aed93644445870c7c2d0fabbe'
+            '2654d7de4e6072a5f4889cb1e92d400bf0ff0bec3c68626e53a74bc73283f97f'
+            'daa6d7dde708596e7c2178c76c514bb8afa326007193d8f428cd38009cee7a7a')
 
 prepare() {
   cd dwm
