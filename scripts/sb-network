@@ -7,7 +7,7 @@ esac
 
 dev=$(ip route show default 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }')
 if [ -z "$dev" ]; then
-	printf '%s offline\n' "󰖪"
+	printf '%s %-13s\n' "󰖪" offline   # same width as the rates
 	exit 0
 fi
 
@@ -39,4 +39,5 @@ human() {
 		if (i > 2 && b < 10) printf "%.1f%s", b, u[i]; else printf "%d%s", b, u[i]
 	}'
 }
-printf '%s %s %s %s\n' "" "$(human "$rxrate")" "" "$(human "$txrate")"
+# rates padded to 5 columns (longest is "1023K") so the bar never shifts
+printf '%s %5s %s %5s\n' "" "$(human "$rxrate")" "" "$(human "$txrate")"

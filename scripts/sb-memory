@@ -7,5 +7,5 @@ esac
 awk -v icon="󰍛" '
 	/^MemTotal:/     { total = $2 }
 	/^MemAvailable:/ { avail = $2 }
-	END { printf "%s %.1fG\n", icon, (total - avail) / 1048576 }
+	END { printf "%s %4.1fG\n", icon, (total - avail) / 1048576 }
 ' /proc/meminfo

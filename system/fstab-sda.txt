@@ -1,0 +1,5 @@
+# 1 TB disk (sda): old Windows NTFS partition, mounted for files
+UUID=B4A89DE3A89DA480	/mnt/windows	ntfs-3g	rw,uid=1000,gid=1000,umask=022,windows_names,noatime,nofail,x-systemd.device-timeout=10s	0 0
+
+# 1 TB disk (sda): backups (~/.local/bin/backup, daily systemd user timer)
+UUID=82a499c5-7769-4deb-ba1b-15629058329c	/mnt/backup	ext4	rw,noatime,nofail,x-systemd.device-timeout=10s	0 2

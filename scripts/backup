@@ -1,0 +1,56 @@
+#!/bin/bash
+# backup: daily snapshot of ~ to /mnt/backup/home/YYYY-MM-DD.
+#
+# Every snapshot is a complete, plain copy of your home folder: browse it, or
+# copy files back with cp. Files that didn't change are hard links to the
+# previous snapshot, so each day only costs the space of what changed.
+#
+# Keeps: the last 14 days, one per week for 8 weeks, one per month for 12 months.
+# Skips caches and things that can be downloaded or rebuilt (see EXCLUDES).
+# Runs from backup.timer (systemd --user); run it by hand any time.
+set -euo pipefail
+
+DEST=/mnt/backup/home
+EXCLUDES=(
+	.cache/                       # app caches
+	.local/share/Trash/
+	.local/share/Steam/steamapps/ # games: Steam re-downloads them
+	.npm/                         # npm download cache
+	photocraft/src/ photocraft/pkg/ lightcraft/src/ lightcraft/pkg/   # makepkg build dirs
+	'*.o'
+)
+
+mountpoint -q /mnt/backup || { echo "backup: /mnt/backup is not mounted, skipping" >&2; exit 1; }
+mkdir -p "$DEST"
+
+today=$(date +%F)
+new="$DEST/$today.partial"
+last=$(find "$DEST" -mindepth 1 -maxdepth 1 -type d -name '????-??-??' ! -name "$today" | sort | tail -1)
+
+args=(-aH --delete --delete-excluded --info=stats1)
+for e in "${EXCLUDES[@]}"; do args+=(--exclude="$e"); done
+[ -n "$last" ] && args+=(--link-dest="$last")
+
+rm -rf "$new"
+rsync "${args[@]}" "$HOME/" "$new/"
+pacman -Qqe > "$new/.packages-explicit.txt"   # what to reinstall
+pacman -Qqm > "$new/.packages-aur.txt"
+rm -rf "${DEST:?}/$today"
+mv "$new" "$DEST/$today"
+echo "backup: saved $DEST/$today"
+
+# prune: keep 14 newest days, newest per ISO week (8 weeks), newest per month (12 months)
+declare -A keep
+mapfile -t snaps < <(find "$DEST" -mindepth 1 -maxdepth 1 -type d -name '????-??-??' -printf '%f\n' | sort -r)
+declare -A week month
+for i in "${!snaps[@]}"; do
+	s=${snaps[$i]}
+	[ "$i" -lt 14 ] && keep[$s]=1
+	w=$(date -d "$s" +%G-%V); m=${s:0:7}
+	if [ -z "${week[$w]:-}" ] && [ "${#week[@]}" -lt 8 ]; then week[$w]=1; keep[$s]=1; fi
+	if [ -z "${month[$m]:-}" ] && [ "${#month[@]}" -lt 12 ]; then month[$m]=1; keep[$s]=1; fi
+done
+for s in "${snaps[@]}"; do
+	[ -n "${keep[$s]:-}" ] || { rm -rf "${DEST:?}/$s"; echo "backup: pruned $s"; }
+done
+df -h /mnt/backup | awk 'NR == 2 { print "backup: " $4 " free on /mnt/backup" }'

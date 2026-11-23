@@ -15,7 +15,8 @@ Only the Ctrl, Alt and Delete keys are looked at; all other input is ignored.
 
 Usage: dwm-rescue [--dry-run] [--vt ttyN] [device ...]
   --dry-run   only print what would happen
-  --vt        virtual terminal of the X session (default tty1)
+  --vt        virtual terminal of the X session (default: the one Xorg runs on,
+              read from its command line, e.g. "vt1"; tty1 if Xorg isn't running)
   device      input devices to read (default: every keyboard with a Delete key)
 """
 import glob
@@ -61,6 +62,20 @@ def active_vt():
         return ''
 
 
+def xorg_vt():
+    """The VT Xorg was started on (startx and display managers pass "vtN")."""
+    for pid in subprocess.run(['pidof', 'Xorg'], capture_output=True, text=True).stdout.split():
+        try:
+            with open(f'/proc/{pid}/cmdline') as f:
+                args = f.read().split('\0')
+        except OSError:
+            continue
+        for a in args:
+            if a.startswith('vt') and a[2:].isdigit():
+                return 'tty' + a[2:]
+    return 'tty1'
+
+
 def snapshot():
     """Record what dwm and Xorg are doing, for diagnosing the freeze later."""
     os.makedirs(LOGDIR, exist_ok=True)
@@ -89,6 +104,7 @@ def snapshot():
 
 
 def rescue(dry_run, vt):
+    vt = vt or xorg_vt()
     if active_vt() != vt:
         print(f'ctrl+alt+delete on {active_vt()}, not {vt}: ignored', flush=True)
         return
@@ -107,7 +123,7 @@ def rescue(dry_run, vt):
 def main():
     args = sys.argv[1:]
     dry_run = '--dry-run' in args
-    vt = 'tty1'
+    vt = None
     if '--vt' in args:
         vt = args[args.index('--vt') + 1]
     fixed = [a for i, a in enumerate(args) if not a.startswith('--') and (i == 0 or args[i - 1] != '--vt')]

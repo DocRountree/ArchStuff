@@ -1,0 +1,4 @@
+# earlyoom: when free RAM drops under 4% *and* free swap (zram) under 10%,
+# kill the biggest process before the desktop stalls.
+# Never the desktop itself; prefer compilers and linkers (runaway builds).
+EARLYOOM_ARGS="-r 3600 -m 4 -s 10 --avoid '(^|/)(init|systemd.*|Xorg|dwm|dwmblocks|sxhkd|pipewire.*|wireplumber|pulseaudio|sshd)$' --prefer '(^|/)(cc1|cc1plus|rustc|ld|ld\.lld|lto1|lto-wrapper)$'"

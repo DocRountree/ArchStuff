@@ -15,4 +15,4 @@ if [ -r "$state" ]; then
 	[ "$dt" -gt 0 ] && pct=$(( (100 * (dt - di) + dt / 2) / dt ))
 fi
 echo "$total $idle" > "$state"
-printf '%s %s%%\n' "󰻠" "$pct"
+printf '%s %3s%%\n' "󰻠" "$pct"   # fixed width: the bar must not shift

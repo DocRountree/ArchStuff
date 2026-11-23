@@ -1,0 +1,41 @@
+# sxhkd: the media/function keys above the F keys (dwm handles everything else).
+# Reload after editing: pkill -USR1 -x sxhkd
+#
+# Volume goes through sb-volume, so the keys behave exactly like scrolling and
+# clicking the bar's volume block (5% steps, capped at 100%), then signal 4
+# tells dwmblocks to redraw that block straight away.
+
+XF86AudioRaiseVolume
+	BLOCK_BUTTON=4 sb-volume >/dev/null; pkill -RTMIN+4 -x dwmblocks
+
+XF86AudioLowerVolume
+	BLOCK_BUTTON=5 sb-volume >/dev/null; pkill -RTMIN+4 -x dwmblocks
+
+XF86AudioMute
+	BLOCK_BUTTON=1 sb-volume >/dev/null; pkill -RTMIN+4 -x dwmblocks
+
+XF86AudioMicMute
+	pactl set-source-mute @DEFAULT_SOURCE@ toggle
+
+# media: whichever player is active (Firefox, VLC, Spotify, ...; via MPRIS)
+XF86Audio{Play,Pause}
+	playerctl play-pause
+
+XF86AudioStop
+	playerctl stop
+
+XF86Audio{Next,Prev}
+	playerctl {next,previous}
+
+# launchers
+XF86{HomePage,WWW}
+	firefox
+
+XF86{Explorer,MyComputer}
+	thunar
+
+XF86Search
+	dmenu_run
+
+XF86Calculator
+	st -t calculator -e bc -lq
