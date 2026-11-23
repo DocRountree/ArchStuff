@@ -40,15 +40,16 @@ mv "$new" "$DEST/$today"
 echo "backup: saved $DEST/$today"
 
 # prune: keep 14 newest days, newest per ISO week (8 weeks), newest per month (12 months)
-declare -A keep
+declare -A keep=()
 mapfile -t snaps < <(find "$DEST" -mindepth 1 -maxdepth 1 -type d -name '????-??-??' -printf '%f\n' | sort -r)
-declare -A week month
+declare -A week=() month=()
+nweeks=0 nmonths=0
 for i in "${!snaps[@]}"; do
 	s=${snaps[$i]}
 	[ "$i" -lt 14 ] && keep[$s]=1
 	w=$(date -d "$s" +%G-%V); m=${s:0:7}
-	if [ -z "${week[$w]:-}" ] && [ "${#week[@]}" -lt 8 ]; then week[$w]=1; keep[$s]=1; fi
-	if [ -z "${month[$m]:-}" ] && [ "${#month[@]}" -lt 12 ]; then month[$m]=1; keep[$s]=1; fi
+	if [ -z "${week[$w]:-}" ] && [ "$nweeks" -lt 8 ]; then week[$w]=1; nweeks=$((nweeks + 1)); keep[$s]=1; fi
+	if [ -z "${month[$m]:-}" ] && [ "$nmonths" -lt 12 ]; then month[$m]=1; nmonths=$((nmonths + 1)); keep[$s]=1; fi
 done
 for s in "${snaps[@]}"; do
 	[ -n "${keep[$s]:-}" ] || { rm -rf "${DEST:?}/$s"; echo "backup: pruned $s"; }
