@@ -3,6 +3,13 @@
 # Calamares can't swap its install steps mid-run, so the choice happens here, just before it opens.
 set -euo pipefail
 
+# Dark mode for the installer. zenity (GTK 4/libadwaita) follows the first two;
+# Calamares (Qt 6) takes its colours from GTK through Qt's gtk3 platform theme.
+# sudo -E below passes them on to Calamares.
+export ADW_DEBUG_COLOR_SCHEME=prefer-dark
+export GTK_THEME=Adwaita:dark
+export QT_QPA_PLATFORMTHEME=gtk3
+
 if pgrep -x calamares >/dev/null; then
     exit 0
 fi
