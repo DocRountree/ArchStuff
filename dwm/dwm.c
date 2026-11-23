@@ -826,7 +826,7 @@ dirtomon(int dir)
 void
 drawbar(Monitor *m)
 {
-	int x, w, tw = 0, stw = 0;
+	int x, w, tw = 0, stw = 0, traybw = 0;
 	int boxs = drw->fonts->h / 9;
 	int boxw = drw->fonts->h / 6 + 2;
 	unsigned int i, occ = 0, urg = 0;
@@ -836,7 +836,12 @@ drawbar(Monitor *m)
 		return;
 
 	if(showsystray && m == systraytomon(m) && !systrayonleft)
-		stw = getsystraywidth();
+		traybw = getsystraywidth(); /* the tray window covers this much of the bar's right end */
+	stw = traywidthright(m);       /* ... plus the gap before the status text */
+	if (stw > traybw) {
+		drw_setscheme(drw, scheme[SchemeNorm]);
+		drw_rect(drw, m->ww - stw, 0, stw - traybw, bh, 1, 1);
+	}
 
 	/* draw status first so it can be overdrawn by tags later */
 	if (m == selmon) { /* status is only drawn on selected monitor */
@@ -882,34 +887,33 @@ drawbar(Monitor *m)
 	drw_setscheme(drw, scheme[SchemeNorm]);
 	x = drw_text(drw, x, 0, w, bh, lrpad / 2, m->ltsymbol, 0);
 
+	/* the centred status section (clock): the window title stops short of it,
+	 * and it is drawn on the same background as the title area around it */
+	if (m == selmon)
+		ctextx = -1;
 	if (m == selmon && ctext[0]) {
-		int cw = TEXTW(ctext), cx = (m->ww - cw) / 2, endx = m->ww - tw - stw;
+		int cw = TEXTW(ctext), cx = (m->ww - cw) / 2;
 
-		if (cx > x && cx + cw < endx) {
-			/* clear the area right of the centred text, then draw it */
-			drw_setscheme(drw, scheme[SchemeNorm]);
-			drw_rect(drw, cx, 0, endx - cx, bh, 1, 1);
-			drw_text(drw, cx, 0, cw, bh, lrpad / 2, ctext, 0);
+		if (cx > x && cx + cw < m->ww - tw - stw) {
 			ctextx = cx;
 			ctextw = cw;
-			tw = m->ww - stw - cx; /* the title ends where the centred text starts */
-		} else
-			ctextx = -1;
-	} else if (m == selmon)
-		ctextx = -1;
-
-	if ((w = m->ww - tw - stw - x - (showsystray && systrayonleft && m == systraytomon(m) ? (int)getsystraywidth() + lrpad / 2 : 0)) > bh) {
-		if (m->sel) {
-			drw_setscheme(drw, scheme[m == selmon ? SchemeSel : SchemeNorm]);
-			drw_text(drw, x, 0, w, bh, lrpad / 2, m->sel->name, 0);
-			if (m->sel->isfloating)
-				drw_rect(drw, x + boxs, boxs, boxw, boxw, m->sel->isfixed, 0);
-		} else {
-			drw_setscheme(drw, scheme[SchemeNorm]);
-			drw_rect(drw, x, 0, w, bh, 1, 1);
 		}
 	}
-	drw_map(drw, m->barwin, 0, 0, m->ww - stw, bh);
+
+	if ((w = m->ww - tw - stw - x - (showsystray && systrayonleft && m == systraytomon(m) ? (int)getsystraywidth() + lrpad / 2 : 0)) > bh) {
+		int sch = (m->sel && m == selmon) ? SchemeSel : SchemeNorm;
+
+		drw_setscheme(drw, scheme[sch]);
+		drw_rect(drw, x, 0, w, bh, 1, 1);
+		if (m->sel) {
+			drw_text(drw, x, 0, ctextx >= 0 ? ctextx - x : w, bh, lrpad / 2, m->sel->name, 0);
+			if (m->sel->isfloating)
+				drw_rect(drw, x + boxs, boxs, boxw, boxw, m->sel->isfixed, 0);
+		}
+		if (m == selmon && ctextx >= 0)
+			drw_text(drw, ctextx, 0, ctextw, bh, lrpad / 2, ctext, 0);
+	}
+	drw_map(drw, m->barwin, 0, 0, m->ww - traybw, bh);
 }
 
 void
@@ -1057,7 +1061,12 @@ getatomprop(Client *c, Atom prop)
 static int
 traywidthright(Monitor *m)
 {
-	return (showsystray && !systrayonleft && m == systraytomon(m)) ? (int)getsystraywidth() : 0;
+	int w;
+
+	if (!showsystray || systrayonleft || m != systraytomon(m))
+		return 0;
+	w = getsystraywidth();
+	return w > 1 ? w + (int)systraygap : w; /* gap between the status text and the tray icons */
 }
 
 unsigned int
