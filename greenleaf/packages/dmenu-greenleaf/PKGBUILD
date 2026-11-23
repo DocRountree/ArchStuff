@@ -1,0 +1,27 @@
+# Maintainer: Greenleaf
+# dmenu 5.4, stock config (dwm passes its colors and font on the command line).
+pkgname=dmenu-greenleaf
+pkgver=5.4
+pkgrel=1
+_commit=7175c4880bac3d2a2d4a6262b59193f0a38e2fdb
+pkgdesc="Dynamic menu for X, Greenleaf edition"
+arch=('x86_64')
+url="https://tools.suckless.org/dmenu"
+license=('MIT')
+depends=('sh' 'libx11' 'libxinerama' 'libxft' 'freetype2' 'fontconfig')
+makedepends=('git')
+provides=('dmenu')
+conflicts=('dmenu')
+source=("dmenu::git+https://git.suckless.org/dmenu#commit=${_commit}")
+sha256sums=('SKIP')
+
+build() {
+  cd dmenu
+  make X11INC=/usr/include/X11 X11LIB=/usr/lib/X11 FREETYPEINC=/usr/include/freetype2
+}
+
+package() {
+  cd dmenu
+  make PREFIX=/usr DESTDIR="$pkgdir" install
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

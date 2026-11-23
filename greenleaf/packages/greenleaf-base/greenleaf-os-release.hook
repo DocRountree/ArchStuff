@@ -1,0 +1,13 @@
+# /usr/lib/os-release belongs to the "filesystem" package; re-apply Greenleaf's
+# version whenever filesystem or greenleaf-base is installed or upgraded.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = filesystem
+Target = greenleaf-base
+
+[Action]
+Description = Applying Greenleaf os-release...
+When = PostTransaction
+Exec = /usr/bin/install -m644 /usr/share/greenleaf/os-release /usr/lib/os-release

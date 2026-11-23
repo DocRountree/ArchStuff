@@ -1,0 +1,2 @@
+# Live session only: passwordless sudo for the live user (runs the installer).
+live ALL=(ALL:ALL) NOPASSWD: ALL

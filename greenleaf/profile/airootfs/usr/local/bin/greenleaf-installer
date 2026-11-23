@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Live session only: ask offline vs online, then start Calamares with the matching config.
+# Calamares can't swap its install steps mid-run, so the choice happens here, just before it opens.
+set -euo pipefail
+
+if pgrep -x calamares >/dev/null; then
+    exit 0
+fi
+
+mode=$(zenity --list --radiolist --title="Install Greenleaf" \
+    --text="How should Greenleaf be installed?" \
+    --width=520 --height=260 \
+    --column="" --column="Mode" --column="What it does" \
+    TRUE  offline "Copy this live system to disk. No internet needed." \
+    FALSE online  "Download the newest packages. Needs internet, takes longer." \
+    ) || exit 0
+
+case "$mode" in
+    offline|online) ;;
+    *) exit 0 ;;
+esac
+
+if [[ "$mode" == online ]] && ! ping -c1 -W3 archlinux.org >/dev/null 2>&1; then
+    zenity --error --width=400 --text="No internet connection. Connect with the network icon, or choose Offline."
+    exit 1
+fi
+
+exec sudo -E calamares -c "/etc/calamares/$mode"

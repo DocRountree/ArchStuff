@@ -1,0 +1,5 @@
+# Build outputs (tools/build-repo.sh, tools/build-iso.sh)
+/build/
+/packages/greenleaf-base/wallpapers/
+*.pkg.tar.*
+*.iso

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Greenleaf
+Comment=dwm with the Greenleaf session
+Exec=/usr/bin/greenleaf-session
+Type=Application
+DesktopNames=dwm

@@ -1,0 +1,3 @@
+# Greenleaf: `startx` runs this. Add your own startup programs to
+# ~/.config/greenleaf/autostart rather than editing here.
+exec greenleaf-session

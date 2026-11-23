@@ -1,0 +1,131 @@
+# ---- Live boot plumbing (from archiso releng) ----
+base
+linux
+linux-firmware
+mkinitcpio
+mkinitcpio-archiso
+syslinux
+edk2-shell
+memtest86+
+memtest86+-efi
+amd-ucode
+intel-ucode
+
+# ---- Installer ----
+calamares
+ckbcomp
+grub
+efibootmgr
+os-prober
+dosfstools
+ntfs-3g
+e2fsprogs
+cryptsetup
+squashfs-tools
+rsync
+reflector
+zenity
+arch-install-scripts
+
+# ---- Greenleaf packages (local repo) ----
+greenleaf-base
+dwm-greenleaf
+st-greenleaf
+dmenu-greenleaf
+
+# ---- Core system ----
+base-devel
+sudo
+zram-generator
+power-profiles-daemon
+sof-firmware
+alsa-utils
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+bluez
+bluez-utils
+networkmanager
+network-manager-applet
+flatpak
+unzip
+zip
+# GPU: always on the ISO so the "NVIDIA drivers" boot entry works.
+# Installed only when Calamares detects an NVIDIA GPU and the user picks it.
+nvidia-open
+nvidia-utils
+
+# ---- Desktop and X11 ----
+xorg-server
+xorg-xinit
+xorg-xrandr
+xorg-xsetroot
+arandr
+sddm
+libxft
+libxinerama
+picom
+xscreensaver
+sxhkd
+feh
+scrot
+gnome-keyring
+thunar
+xarchiver
+peazip
+mousepad
+
+# ---- Fonts ----
+ttf-dejavu
+ttf-liberation-mono-nerd
+ttf-nerd-fonts-symbols
+ttf-nerd-fonts-symbols-mono
+
+# ---- Internet and chat ----
+firefox
+signal-desktop
+transmission-gtk
+
+# ---- Creative and media ----
+gst-libav
+inkscape
+kdenlive
+krita
+lightcraft
+photocraft
+mpv
+vlc
+
+# ---- Office and reading ----
+fbreader
+gnote
+libreoffice-fresh
+mupdf
+zathura
+zathura-djvu
+
+# ---- Science, maps and data ----
+# google-earth-pro: check Google's terms before distributing the ISO (see docs/decisions.md)
+google-earth-pro
+python-matplotlib
+python-pandas
+python-scipy
+qgis
+stellarium
+
+# ---- Development ----
+cmake
+git
+github-cli
+jre-openjdk
+nodejs
+npm
+python-pip
+python-pipx
+vim
+yay
+
+# ---- Games and emulation ----
+gnome-boxes
+gnome-mines
