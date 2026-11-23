@@ -11,7 +11,7 @@
 # and update the checksum below.
 pkgname=dmenu-greenleaf
 pkgver=5.4
-pkgrel=3
+pkgrel=4
 _commit=7175c4880bac3d2a2d4a6262b59193f0a38e2fdb
 pkgdesc="Dynamic menu for X, Greenleaf edition"
 arch=('x86_64')
@@ -25,7 +25,7 @@ source=("dmenu::git+https://git.suckless.org/dmenu#commit=${_commit}"
         'greenleaf.patch'
         'tags')
 backup=('etc/dmenu-greenleaf/tags')
-sha256sums=('SKIP' '391525f672153f5362b5d81e54c80e74ff08b249edf0294e089279fcf90c5384' '3d87a1b25defa23cefdde2fe4b1853e0934f189e6435393096dd4607ec5003c3')
+sha256sums=('SKIP' '89489a9336acf66cf5f0a1c866bee8a8996e3bee7ecf5841d2029fa6eaa6bfdc' '3d87a1b25defa23cefdde2fe4b1853e0934f189e6435393096dd4607ec5003c3')
 
 prepare() {
   cd dmenu

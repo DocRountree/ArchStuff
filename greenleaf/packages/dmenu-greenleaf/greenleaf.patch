@@ -1,5 +1,5 @@
 diff --git a/config.def.h b/config.def.h
-index 1edb647..bd0b681 100644
+index 1edb647..5869585 100644
 --- a/config.def.h
 +++ b/config.def.h
 @@ -1,10 +1,14 @@
@@ -20,7 +20,7 @@ index 1edb647..bd0b681 100644
  };
  static const char *prompt      = NULL;      /* -p  option; prompt to the left of input field */
  static const char *colors[SchemeLast][2] = {
-@@ -12,10 +16,22 @@ static const char *colors[SchemeLast][2] = {
+@@ -12,10 +16,24 @@ static const char *colors[SchemeLast][2] = {
  	[SchemeNorm] = { "#bbbbbb", "#222222" },
  	[SchemeSel] = { "#eeeeee", "#005577" },
  	[SchemeOut] = { "#000000", "#00ffff" },
@@ -40,6 +40,8 @@ index 1edb647..bd0b681 100644
 +static int blurradius          = 2;    /* -br option; blur radius (0 disables the blurred backdrop) */
 +static int blurscale           = 2;    /* downscale factor before blurring; higher = softer and faster */
 +static int blurdim             = 55;   /* backdrop brightness in percent (100 = not darkened) */
++static int spotdim             = 55;   /* brightness right behind the text, in percent of the backdrop */
++static int spotfeather         = 500;  /* how far (px) beyond the text area the darkening fades out */
 +
  /*
   * Characters not considered part of a word while deleting words
@@ -117,7 +119,7 @@ index ed0e442..d766a2a 100644
  .B Tab
  Copy the selected item to the input field.
 diff --git a/dmenu.c b/dmenu.c
-index 363d19f..8727de1 100644
+index 363d19f..a3d36fa 100644
 --- a/dmenu.c
 +++ b/dmenu.c
 @@ -1,15 +1,20 @@
@@ -406,8 +408,7 @@ index 363d19f..8727de1 100644
 +		loadrow(a);
 +		sel = asel;
 +		y -= bh + rowpad;
- 	}
--	drw_map(drw, win, 0, 0, mw, mh);
++	}
 +
 +	/* quiet position counter instead of scroll arrows */
 +	if (matches && (curr->left || next)) {
@@ -425,7 +426,8 @@ index 363d19f..8727de1 100644
 +		w = TEXTW(count);
 +		drw_setscheme(drw, scheme[SchemeDim]);
 +		drw_text(drw, (pw - w) / 2, y, w, bh, lrpad / 2, count, 0);
-+	}
+ 	}
+-	drw_map(drw, win, 0, 0, mw, mh);
 +
 +	mappanel();
  }
@@ -1200,7 +1202,7 @@ index 363d19f..8727de1 100644
  			break;
  		case FocusIn:
  			/* regrab focus from parent window */
-@@ -610,6 +1355,127 @@ run(void)
+@@ -610,6 +1355,156 @@ run(void)
  	}
  }
  
@@ -1246,6 +1248,7 @@ index 363d19f..8727de1 100644
 +	XImage *img;
 +	unsigned int *buf, *tmp, one = 1, r, g, b, n;
 +	int f = MAX(blurscale, 1), sw, sh, sx, sy, ix, iy, i, fast, *x0, *wx;
++	int F = MAX(spotfeather, 1), spot = spotdim * 256 / 100, *dxs, *lut, cx, cy, ax, ay, dy, d2;
 +	unsigned long p;
 +
 +	if (blurradius <= 0 || w <= 0 || h <= 0)
@@ -1266,6 +1269,27 @@ index 363d19f..8727de1 100644
 +	tmp = ecalloc((size_t)sw * sh * 3, sizeof *tmp);
 +	x0 = ecalloc(w, sizeof *x0);
 +	wx = ecalloc(w, sizeof *wx);
++	dxs = ecalloc(w, sizeof *dxs);
++
++	/* extra darkening behind the text: an ellipse around the centred text
++	 * area, darkest in the middle and easing out continuously to nothing at
++	 * its rim, so there is no visible edge. squared normalised distances are
++	 * kept in 1/1024 units; lut maps them (>> 6) to a 0..256 multiplier. */
++	lut = ecalloc(1 << 14, sizeof *lut);
++	for (i = 0; i < 1024; i++) {
++		/* r in [0,1): full strength core up to 0.35, then smoothstep out */
++		int t = MAX(0, (i - 358) * 256 / (1024 - 358)), sm = t * t * (768 - 2 * t) >> 16;
++		for (d2 = (i * i) >> 6; d2 < (((i + 1) * (i + 1)) >> 6) && d2 < (1 << 14); d2++)
++			lut[d2] = spot + ((256 - spot) * sm >> 8);
++	}
++	cx = w / 2;
++	cy = h / 2;
++	ax = MAX(pw / 2 + F, 1);
++	ay = MAX(ph / 2 + F / 2, 1);
++	for (ix = 0; ix < w; ix++) {
++		int e = (ix - cx) * 1024 / ax;
++		dxs[ix] = (abs(e) < 1024) ? e * e : 1 << 20;
++	}
 +
 +	/* downscale by averaging f x f blocks, applying the dim factor */
 +	for (sy = 0; sy < sh; sy++)
@@ -1301,12 +1325,17 @@ index 363d19f..8727de1 100644
 +		y0 = MIN(fy >> 8, sh - 1);
 +		y1 = MIN(y0 + 1, sh - 1);
 +		wy = (y1 != y0) ? (fy & 0xff) : 0;
++		dy = (iy - cy) * 1024 / ay;
++		dy = (abs(dy) < 1024) ? dy * dy : 1 << 20;
 +		for (ix = 0; ix < w; ix++) {
 +			unsigned int c[3], k, *a = &buf[(y0 * sw + x0[ix]) * 3], *d = &buf[(y1 * sw + x0[ix]) * 3];
 +			int bx = wx[ix] ? 3 : 0;
 +			for (k = 0; k < 3; k++)
 +				c[k] = ((a[k] * (256 - wx[ix]) + a[k + bx] * wx[ix]) * (256 - wy) +
 +				        (d[k] * (256 - wx[ix]) + d[k + bx] * wx[ix]) * wy) >> 16;
++			if ((d2 = dxs[ix] + dy) < (1 << 20))
++				for (k = 0; k < 3; k++)
++					c[k] = c[k] * lut[d2 >> 6] >> 8;
 +			p = (unsigned long)c[0] << 16 | c[1] << 8 | c[2];
 +			if (fast)
 +				((uint32_t *)(img->data + iy * img->bytes_per_line))[ix] = p;
@@ -1323,12 +1352,14 @@ index 363d19f..8727de1 100644
 +	free(tmp);
 +	free(x0);
 +	free(wx);
++	free(dxs);
++	free(lut);
 +}
 +
  static void
  setup(void)
  {
-@@ -622,7 +1488,7 @@ setup(void)
+@@ -622,7 +1517,7 @@ setup(void)
  	XClassHint ch = {"dmenu", "dmenu"};
  #ifdef XINERAMA
  	XineramaScreenInfo *info;
@@ -1337,7 +1368,7 @@ index 363d19f..8727de1 100644
  	int a, di, n, area = 0;
  #endif
  	/* init appearance */
-@@ -633,9 +1499,8 @@ setup(void)
+@@ -633,9 +1528,8 @@ setup(void)
  	utf8 = XInternAtom(dpy, "UTF8_STRING", False);
  
  	/* calculate menu geometry */
@@ -1349,7 +1380,7 @@ index 363d19f..8727de1 100644
  #ifdef XINERAMA
  	i = 0;
  	if (parentwin == root && (info = XineramaQueryScreens(dpy, &n))) {
-@@ -645,11 +1510,11 @@ setup(void)
+@@ -645,11 +1539,11 @@ setup(void)
  		else if (w != root && w != PointerRoot && w != None) {
  			/* find top-level window containing current input focus */
  			do {
@@ -1364,7 +1395,7 @@ index 363d19f..8727de1 100644
  				for (j = 0; j < n; j++)
  					if ((a = INTERSECT(wa.x, wa.y, wa.width, wa.height, info[j])) > area) {
  						area = a;
-@@ -663,8 +1528,9 @@ setup(void)
+@@ -663,8 +1557,9 @@ setup(void)
  					break;
  
  		x = info[i].x_org;
@@ -1375,7 +1406,7 @@ index 363d19f..8727de1 100644
  		XFree(info);
  	} else
  #endif
-@@ -673,20 +1539,46 @@ setup(void)
+@@ -673,20 +1568,46 @@ setup(void)
  			die("could not get embedding window attributes: 0x%lx",
  			    parentwin);
  		x = 0;
@@ -1426,7 +1457,7 @@ index 363d19f..8727de1 100644
  	XSetClassHint(dpy, win, &ch);
  
  	/* input methods */
-@@ -707,15 +1599,17 @@ setup(void)
+@@ -707,15 +1628,17 @@ setup(void)
  		}
  		grabfocus();
  	}
@@ -1447,7 +1478,7 @@ index 363d19f..8727de1 100644
  }
  
  int
-@@ -729,14 +1623,17 @@ main(int argc, char *argv[])
+@@ -729,14 +1652,17 @@ main(int argc, char *argv[])
  		if (!strcmp(argv[i], "-v")) {      /* prints version information */
  			puts("dmenu-"VERSION);
  			exit(0);
@@ -1471,7 +1502,7 @@ index 363d19f..8727de1 100644
  			usage();
  		/* these options take one argument */
  		else if (!strcmp(argv[i], "-l"))   /* number of lines in vertical list */
-@@ -745,8 +1642,16 @@ main(int argc, char *argv[])
+@@ -745,8 +1671,16 @@ main(int argc, char *argv[])
  			mon = atoi(argv[++i]);
  		else if (!strcmp(argv[i], "-p"))   /* adds prompt to left of input field */
  			prompt = argv[++i];
@@ -1489,7 +1520,7 @@ index 363d19f..8727de1 100644
  		else if (!strcmp(argv[i], "-nb"))  /* normal background color */
  			colors[SchemeNorm][ColBg] = argv[++i];
  		else if (!strcmp(argv[i], "-nf"))  /* normal foreground color */
-@@ -776,9 +1681,15 @@ main(int argc, char *argv[])
+@@ -776,9 +1710,15 @@ main(int argc, char *argv[])
  		die("could not get embedding window attributes: 0x%lx",
  		    parentwin);
  	drw = drw_create(dpy, screen, root, wa.width, wa.height);
@@ -1507,7 +1538,7 @@ index 363d19f..8727de1 100644
  
  #ifdef __OpenBSD__
  	if (pledge("stdio rpath", NULL) == -1)
-@@ -792,6 +1703,8 @@ main(int argc, char *argv[])
+@@ -792,6 +1732,8 @@ main(int argc, char *argv[])
  		readstdin();
  		grabkeyboard();
  	}
