@@ -1,0 +1,4 @@
+# dmenu-greenleaf system-wide tags: one command per line, followed by words that should find it.
+# Users can add their own in ~/.config/dmenu-greenleaf/tags. Plurals and "-ing" forms match automatically.
+mousepad notes note notepad jot scratch
+st terminal term shell console

@@ -1,0 +1,1586 @@
+diff --git a/config.def.h b/config.def.h
+index 1edb647..5869585 100644
+--- a/config.def.h
++++ b/config.def.h
+@@ -1,10 +1,14 @@
+ /* See LICENSE file for copyright and license details. */
+ /* Default settings; can be overriden by command line. */
+ 
+-static int topbar = 1;                      /* -b  option; if 0, dmenu appears at bottom     */
+-/* -fn option overrides fonts[0]; default X11 font or font set */
++/* -lfn option overrides fonts[0]; font used for the results.
++ * (-fn is ignored so that dwm's small bar font does not shrink the results) */
+ static const char *fonts[] = {
+-	"monospace:size=10"
++	"monospace:size=16"
++};
++/* -ifn option overrides inputfonts[0]; larger font for the prompt and text entry */
++static const char *inputfonts[] = {
++	"monospace:size=34"
+ };
+ static const char *prompt      = NULL;      /* -p  option; prompt to the left of input field */
+ static const char *colors[SchemeLast][2] = {
+@@ -12,10 +16,24 @@ static const char *colors[SchemeLast][2] = {
+ 	[SchemeNorm] = { "#bbbbbb", "#222222" },
+ 	[SchemeSel] = { "#eeeeee", "#005577" },
+ 	[SchemeOut] = { "#000000", "#00ffff" },
++	[SchemeDim] = { "#808080", "#222222" }, /* position counter */
+ };
+-/* -l option; if nonzero, dmenu uses vertical list with given number of lines */
++/* -l option; 0 shows results in a horizontal row beneath the text entry,
++ * a positive number shows that many rows in a vertical list instead */
+ static unsigned int lines      = 0;
+ 
++/* centred layout */
++static unsigned int panelwidth = 1800; /* -pw option; width of the centred area in px (capped to 90% of the monitor) */
++static unsigned int rowpad     = 8;    /* extra vertical padding above and below each row */
++static unsigned int itemgap    = 12;   /* horizontal space between results */
++
++/* background blur: dmenu snapshots the screen, blurs and darkens it behind the panel */
++static int blurradius          = 2;    /* -br option; blur radius (0 disables the blurred backdrop) */
++static int blurscale           = 2;    /* downscale factor before blurring; higher = softer and faster */
++static int blurdim             = 55;   /* backdrop brightness in percent (100 = not darkened) */
++static int spotdim             = 55;   /* brightness right behind the text, in percent of the backdrop */
++static int spotfeather         = 500;  /* how far (px) beyond the text area the darkening fades out */
++
+ /*
+  * Characters not considered part of a word while deleting words
+  * for example: " /?\"&[]"
+diff --git a/dmenu.1 b/dmenu.1
+index ed0e442..d766a2a 100644
+--- a/dmenu.1
++++ b/dmenu.1
+@@ -42,14 +42,17 @@ which lists programs in the user's $PATH and runs the result in their $SHELL.
+ .SH OPTIONS
+ .TP
+ .B \-b
+-dmenu appears at the bottom of the screen.
++accepted for compatibility; dmenu is always centred on the screen.
+ .TP
+ .B \-f
+ dmenu grabs the keyboard before reading stdin if not reading from a tty. This
+ is faster, but will lock up X until stdin reaches end\-of\-file.
+ .TP
+ .B \-i
+-dmenu matches menu items case insensitively.
++dmenu matches menu items case insensitively (the default).
++.TP
++.B \-s
++dmenu matches menu items case sensitively.
+ .TP
+ .BI \-l " lines"
+ dmenu lists items vertically, with the given number of lines.
+@@ -61,8 +64,31 @@ from 0.
+ .BI \-p " prompt"
+ defines the prompt to be displayed to the left of the input field.
+ .TP
++.B \-a
++app mode (dmenu_run uses it): commands with a desktop entry are listed first
++and can be found by their name, generic name, keywords and category (so
++"notes" finds a text editor); commands launched before move up. In the
++horizontal layout, desktop apps fill the first row and terminal apps,
++developer tools and other commands a dimmer second row; Up and Down switch rows.
++Extra tags are read from /etc/dmenu-greenleaf/tags and
++~/.config/dmenu-greenleaf/tags, one command per line followed by its tags,
++e.g. "mousepad notes notepad". Launch counts are kept in
++$XDG_CACHE_HOME/dmenu-greenleaf/history.
++.TP
+ .BI \-fn " font"
+-defines the font or font set used.
++ignored, so that a window manager's small bar font does not shrink the results.
++.TP
++.BI \-lfn " font"
++defines the font or font set used for the results.
++.TP
++.BI \-ifn " font"
++defines the larger font used for the prompt and text entry.
++.TP
++.BI \-pw " width"
++width in pixels of the centred search area.
++.TP
++.BI \-br " radius"
++blur radius of the darkened screen snapshot shown behind dmenu; 0 disables it.
+ .TP
+ .BI \-nb " color"
+ defines the normal background color.
+@@ -91,8 +117,12 @@ prints version information to stdout, then exits.
+ .BI \-w " windowid"
+ embed into windowid.
+ .SH USAGE
+-dmenu is completely controlled by the keyboard.  Items are selected using the
+-arrow keys, page up, page down, home, and end.
++Typed text is split into space-separated keywords that may appear in any
++order. Each keyword matches an item as a substring or, failing that, as a fuzzy
++subsequence (e.g. "gerth" matches google-earth-pro); results are ranked by match
++quality. Items are selected using the arrow keys, page up, page down, home, and
++end, or with the mouse: hover to select, click to choose, scroll the wheel to
++move through the results. Clicking outside the results closes dmenu.
+ .TP
+ .B Tab
+ Copy the selected item to the input field.
+diff --git a/dmenu.c b/dmenu.c
+index 363d19f..a3d36fa 100644
+--- a/dmenu.c
++++ b/dmenu.c
+@@ -1,15 +1,20 @@
+ /* See LICENSE file for copyright and license details. */
+ #include <ctype.h>
++#include <dirent.h>
++#include <errno.h>
+ #include <locale.h>
++#include <stdint.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <strings.h>
+ #include <time.h>
+ #include <unistd.h>
++#include <sys/stat.h>
+ 
+ #include <X11/Xlib.h>
+ #include <X11/Xatom.h>
++#include <X11/cursorfont.h>
+ #include <X11/Xutil.h>
+ #ifdef XINERAMA
+ #include <X11/extensions/Xinerama.h>
+@@ -25,18 +30,38 @@
+ #define TEXTW(X)              (drw_fontset_getwidth(drw, (X)) + lrpad)
+ 
+ /* enums */
+-enum { SchemeNorm, SchemeSel, SchemeOut, SchemeLast }; /* color schemes */
++enum { SchemeNorm, SchemeSel, SchemeOut, SchemeDim, SchemeLast }; /* color schemes */
+ 
+ struct item {
+ 	char *text;
+ 	struct item *left, *right;
+ 	int out;
++	int score;
++	int rx, ry, rw, rh; /* where the item was last drawn, for mouse hit-testing */
++	const char *tags;   /* app mode: lowercase, space-separated search tags */
++	const char *utags;  /* app mode: the user's own tags for this command */
++	int app;            /* app mode: ranking boost from its desktop entry, 0 if none */
++	int hist;           /* app mode: how often it was launched before */
++};
++
++/* app mode (-a): what we know about each command from desktop entries */
++struct app {
++	char *cmd;
++	char *tags;   /* from desktop entries */
++	char *utags;  /* from the user's tags file; these rank above desktop tags */
++	int weight;   /* ranking boost: normal apps above terminal apps and developer tools */
++};
++
++struct histent {
++	char *cmd;
++	int count;
+ };
+ 
+ static char text[BUFSIZ] = "";
+ static char *embed;
+-static int bh, mw, mh;
+-static int inputw = 0, promptw;
++static int bh, ibh, mw, mh;   /* row height, input row height, monitor size */
++static int pw, ph, px, py;   /* panel size and offset inside the window */
++static int promptw;
+ static int lrpad; /* sum of left and right padding */
+ static size_t cursor;
+ static struct item *items = NULL;
+@@ -50,12 +75,32 @@ static Window root, parentwin, win;
+ static XIC xic;
+ 
+ static Drw *drw;
++static Fnt *normfnt, *bigfnt;
+ static Clr *scheme[SchemeLast];
++static Pixmap bgpix = None;
++static Cursor cursor_arrow = None;
+ 
+ #include "config.h"
+ 
+-static int (*fstrncmp)(const char *, const char *, size_t) = strncmp;
+-static char *(*fstrstr)(const char *, const char *) = strstr;
++static int casesens = 0; /* -s: case-sensitive matching (default is insensitive) */
++static int appmode = 0;  /* -a: rank desktop apps first, tag search, launch history */
++static struct app *apps = NULL;
++static size_t napps = 0;
++static struct histent *hist = NULL;
++static size_t nhist = 0;
++static size_t nmatches = 0;
++
++/* app mode, horizontal layout: row 0 holds desktop apps, row 1 holds terminal
++ * apps, developer tools and other commands. the globals matches/curr/sel/...
++ * always describe the active row; the other row is parked in rows[]. */
++struct row {
++	struct item *matches, *matchend, *curr, *prev, *next, *sel;
++	size_t n;
++};
++static struct row rows[2];
++static int arow = 0;
++static int tworows = 0;
++static int drawdim = 0; /* draw unselected items dimmed (second row) */
+ 
+ static unsigned int
+ textw_clamp(const char *str, unsigned int n)
+@@ -85,13 +130,13 @@ calcoffsets(void)
+ 	if (lines > 0)
+ 		n = lines * bh;
+ 	else
+-		n = mw - (promptw + inputw + TEXTW("<") + TEXTW(">"));
++		n = pw;
+ 	/* calculate which items will begin the next page and previous page */
+ 	for (i = 0, next = curr; next; next = next->right)
+-		if ((i += (lines > 0) ? bh : textw_clamp(next->text, n)) > n)
++		if ((i += (lines > 0) ? bh : (int)textw_clamp(next->text, n) + (int)itemgap) > n + (int)itemgap)
+ 			break;
+ 	for (i = 0, prev = curr; prev && prev->left; prev = prev->left)
+-		if ((i += (lines > 0) ? bh : textw_clamp(prev->left->text, n)) > n)
++		if ((i += (lines > 0) ? bh : (int)textw_clamp(prev->left->text, n) + (int)itemgap) > n + (int)itemgap)
+ 			break;
+ }
+ 
+@@ -101,6 +146,13 @@ cleanup(void)
+ 	size_t i;
+ 
+ 	XUngrabKeyboard(dpy, CurrentTime);
++	if (bgpix != None)
++		XFreePixmap(dpy, bgpix);
++	if (cursor_arrow != None)
++		XFreeCursor(dpy, cursor_arrow);
++	drw_setfontset(drw, normfnt);
++	if (bigfnt != normfnt)
++		drw_fontset_free(bigfnt);
+ 	for (i = 0; i < SchemeLast; i++)
+ 		drw_scm_free(drw, scheme[i], 2);
+ 	for (i = 0; items && items[i].text; ++i)
+@@ -129,66 +181,148 @@ cistrstr(const char *h, const char *n)
+ 	return NULL;
+ }
+ 
++static char *(*fstrstr)(const char *, const char *) = cistrstr;
++
++static void
++saverow(void)
++{
++	rows[arow] = (struct row){ matches, matchend, curr, prev, next, sel, nmatches };
++}
++
++static void
++loadrow(int r)
++{
++	arow = r;
++	matches = rows[r].matches;
++	matchend = rows[r].matchend;
++	curr = rows[r].curr;
++	prev = rows[r].prev;
++	next = rows[r].next;
++	sel = rows[r].sel;
++	nmatches = rows[r].n;
++}
++
++/* make row r active, if it has anything in it */
++static int
++switchrow(int r)
++{
++	if (!tworows || r == arow || r < 0 || r > 1 || !rows[r].matches)
++		return 0;
++	saverow();
++	loadrow(r);
++	return 1;
++}
++
+ static int
+ drawitem(struct item *item, int x, int y, int w)
+ {
++	item->rx = x;
++	item->ry = y;
++	item->rw = w;
++	item->rh = bh;
+ 	if (item == sel)
+ 		drw_setscheme(drw, scheme[SchemeSel]);
+ 	else if (item->out)
+ 		drw_setscheme(drw, scheme[SchemeOut]);
+ 	else
+-		drw_setscheme(drw, scheme[SchemeNorm]);
++		drw_setscheme(drw, scheme[drawdim ? SchemeDim : SchemeNorm]);
++	/* only highlighted items get a background box */
++	if (item == sel || item->out)
++		drw_rect(drw, x, y, w, bh, 1, 1);
+ 
+ 	return drw_text(drw, x, y, w, bh, lrpad / 2, item->text, 0);
+ }
+ 
++static void
++mappanel(void)
++{
++	XCopyArea(dpy, drw->drawable, win, drw->gc, 0, 0, pw, ph, px, py);
++	XSync(dpy, False);
++}
++
+ static void
+ drawmenu(void)
+ {
+-	unsigned int curpos;
++	unsigned int curpos, tw, promptgap;
+ 	struct item *item;
+-	int x = 0, y = 0, w;
++	int x, y, w;
+ 
+-	drw_setscheme(drw, scheme[SchemeNorm]);
+-	drw_rect(drw, 0, 0, mw, mh, 1, 1);
++	/* the panel has no box of its own: start from the blurred backdrop
++	 * behind it, or a plain background when there is no backdrop */
++	if (bgpix != None)
++		XCopyArea(dpy, bgpix, drw->drawable, drw->gc, px, py, pw, ph, 0, 0);
++	else {
++		drw_setscheme(drw, scheme[SchemeNorm]);
++		drw_rect(drw, 0, 0, pw, ph, 1, 1);
++	}
+ 
++	/* prompt and text entry, centred, in the larger input font */
++	drw_setfontset(drw, bigfnt);
++	promptgap = (prompt && *prompt) ? lrpad / 2 : 0;
++	tw = TEXTW(text);
++	w = MIN((int)(promptw + promptgap + tw), pw);
++	x = (pw - w) / 2;
++	y = 0;
+ 	if (prompt && *prompt) {
+ 		drw_setscheme(drw, scheme[SchemeSel]);
+-		x = drw_text(drw, x, 0, promptw, bh, lrpad / 2, prompt, 0);
++		x = drw_text(drw, x, y, promptw, ibh, lrpad / 2, prompt, 0) + promptgap;
+ 	}
+-	/* draw input field */
+-	w = (lines > 0 || !matches) ? mw - x : inputw;
++	w = pw - x;
+ 	drw_setscheme(drw, scheme[SchemeNorm]);
+-	drw_text(drw, x, 0, w, bh, lrpad / 2, text, 0);
++	drw_text(drw, x, y, w, ibh, lrpad / 2, text, 0);
+ 
+-	curpos = TEXTW(text) - TEXTW(&text[cursor]);
+-	if ((curpos += lrpad / 2 - 1) < w) {
+-		drw_setscheme(drw, scheme[SchemeNorm]);
+-		drw_rect(drw, x + curpos, 2, 2, bh - 4, 1, 0);
+-	}
++	curpos = tw - TEXTW(&text[cursor]);
++	if ((curpos += lrpad / 2 - 1) < (unsigned int)w)
++		drw_rect(drw, x + curpos, y + rowpad, 2, ibh - 2 * rowpad, 1, 0);
++	drw_setfontset(drw, normfnt);
+ 
++	y += ibh + rowpad;
+ 	if (lines > 0) {
+-		/* draw vertical list */
+-		for (item = curr; item != next; item = item->right)
+-			drawitem(item, x, y += bh, mw - x);
+-	} else if (matches) {
+-		/* draw horizontal list */
+-		x += inputw;
+-		w = TEXTW("<");
+-		if (curr->left) {
+-			drw_setscheme(drw, scheme[SchemeNorm]);
+-			drw_text(drw, x, 0, w, bh, lrpad / 2, "<", 0);
+-		}
+-		x += w;
+-		for (item = curr; item != next; item = item->right)
+-			x = drawitem(item, x, 0, textw_clamp(item->text, mw - x - TEXTW(">")));
+-		if (next) {
+-			w = TEXTW(">");
+-			drw_setscheme(drw, scheme[SchemeNorm]);
+-			drw_text(drw, mw - w, 0, w, bh, lrpad / 2, ">", 0);
++		/* vertical result list */
++		for (item = curr; item != next; item = item->right, y += bh)
++			drawitem(item, 0, y, pw);
++	} else {
++		/* horizontal result row(s), centred beneath the text entry */
++		int r, a = arow;
++		struct item *asel = sel;
++
++		saverow();
++		for (r = 0; r < (tworows ? 2 : 1); r++, y += bh + rowpad) {
++			loadrow(r);
++			if (r != a)
++				sel = NULL; /* only the active row shows a selection */
++			drawdim = (r == 1);
++			for (w = -(int)itemgap, item = curr; item != next; item = item->right)
++				w += textw_clamp(item->text, pw) + itemgap;
++			x = MAX(0, (pw - w) / 2);
++			for (item = curr; item != next; item = item->right)
++				x = drawitem(item, x, y, textw_clamp(item->text, pw - x)) + itemgap;
+ 		}
++		drawdim = 0;
++		loadrow(a);
++		sel = asel;
++		y -= bh + rowpad;
++	}
++
++	/* quiet position counter instead of scroll arrows */
++	if (matches && (curr->left || next)) {
++		char count[64];
++		struct item *it;
++		size_t pos = 1;
++
++		for (it = matches; it && it != sel; it = it->right)
++			pos++;
++		snprintf(count, sizeof count, "%zu / %zu", pos, nmatches);
++		if (lines > 0)
++			y += lines * bh + rowpad;
++		else
++			y += bh + rowpad;
++		w = TEXTW(count);
++		drw_setscheme(drw, scheme[SchemeDim]);
++		drw_text(drw, (pw - w) / 2, y, w, bh, lrpad / 2, count, 0);
+ 	}
+-	drw_map(drw, win, 0, 0, mw, mh);
++
++	mappanel();
+ }
+ 
+ static void
+@@ -226,58 +360,562 @@ grabkeyboard(void)
+ 	die("cannot grab keyboard");
+ }
+ 
++/* ---- app mode: desktop entries, tags and launch history ---- */
++
++static char *
++estrdup(const char *s)
++{
++	char *p = strdup(s);
++
++	if (!p)
++		die("strdup:");
++	return p;
++}
++
++/* extra tags for common freedesktop categories, so that e.g. "notes" finds a text editor */
++static const char *catsyn[][2] = {
++	{ "texteditor",       "notes note notepad editor text write writing" },
++	{ "wordprocessor",    "document documents word writer office write" },
++	{ "spreadsheet",      "spreadsheet sheets excel calc table office" },
++	{ "presentation",     "slides presentation powerpoint office" },
++	{ "webbrowser",       "browser web internet www" },
++	{ "filemanager",      "files file explorer folder folders" },
++	{ "terminalemulator", "terminal shell console cli command" },
++	{ "rastergraphics",   "image images photo paint draw picture" },
++	{ "vectorgraphics",   "draw drawing vector illustration" },
++	{ "2dgraphics",       "image images draw picture" },
++	{ "3dgraphics",       "3d model modelling render" },
++	{ "photography",      "photo photos picture pictures camera" },
++	{ "viewer",           "view viewer open" },
++	{ "audio",            "audio sound music" },
++	{ "music",            "music songs audio" },
++	{ "player",           "player play" },
++	{ "video",            "video videos movie movies film" },
++	{ "chat",             "chat message messages messenger" },
++	{ "instantmessaging", "chat message messages messenger" },
++	{ "email",            "mail email inbox" },
++	{ "game",             "game games play" },
++	{ "settings",         "settings preferences config configure options" },
++	{ "calculator",       "calc calculator math" },
++	{ "development",      "code coding programming dev" },
++	{ "ide",              "code coding programming ide" },
++	{ "monitor",          "monitor system task tasks process" },
++	{ "archiving",        "archive zip unzip extract compress" },
++	{ "maps",             "map maps globe earth" },
++	{ "geography",        "map maps globe earth" },
++	{ "ebook",            "book books ebook read reader" },
++	{ "network",          "network internet online" },
++	{ "office",           "office document documents" },
++};
++
++static void
++appendtags(char **tags, const char *s, int camel)
++{
++	size_t old = *tags ? strlen(*tags) : 0, n = strlen(s);
++	char *t, *d;
++	const char *p;
++
++	/* room for the text, a camel-case split copy, separators and NUL */
++	if (!(t = realloc(*tags, old + 2 * (2 * n + 2) + 2)))
++		die("realloc:");
++	*tags = t;
++	d = t + old;
++	if (!old)
++		*d++ = ' ';
++	for (p = s; *p; p++)
++		*d++ = isalnum((unsigned char)*p) ? tolower((unsigned char)*p) : ' ';
++	*d++ = ' ';
++	if (camel) { /* "TextEditor" also yields "text editor" */
++		for (p = s; *p; p++) {
++			if (p > s && isupper((unsigned char)*p) && islower((unsigned char)p[-1]))
++				*d++ = ' ';
++			*d++ = isalnum((unsigned char)*p) ? tolower((unsigned char)*p) : ' ';
++		}
++		*d++ = ' ';
++	}
++	*d = '\0';
++}
++
++static struct app *
++getapp(const char *cmd)
++{
++	size_t i;
++
++	for (i = 0; i < napps; i++)
++		if (!strcmp(apps[i].cmd, cmd))
++			return &apps[i];
++	if (!(apps = realloc(apps, (napps + 1) * sizeof *apps)))
++		die("realloc:");
++	apps[napps].cmd = estrdup(cmd);
++	apps[napps].tags = apps[napps].utags = NULL;
++	apps[napps].weight = 0;
++	return &apps[napps++];
++}
++
++/* the command a desktop entry's Exec= line runs, without path or arguments */
++static int
++execcmd(const char *exec, char *out, size_t outsz)
++{
++	const char *p = exec, *e, *b;
++	size_t n;
++
++	for (;;) {
++		while (*p == ' ' || *p == '\t')
++			p++;
++		if (*p == '"') {
++			e = strchr(++p, '"');
++			if (!e)
++				return 0;
++		} else
++			for (e = p; *e && *e != ' ' && *e != '\t'; e++)
++				;
++		if (e == p)
++			return 0;
++		/* skip "env" and VAR=value prefixes */
++		if ((e - p == 3 && !strncmp(p, "env", 3)) || memchr(p, '=', e - p)) {
++			p = *e ? e + 1 : e;
++			continue;
++		}
++		for (b = e; b > p && b[-1] != '/'; b--)
++			;
++		n = MIN((size_t)(e - b), outsz - 1);
++		memcpy(out, b, n);
++		out[n] = '\0';
++		return n > 0;
++	}
++}
++
++static void
++loaddesktop(const char *path)
++{
++	FILE *fp;
++	char *line = NULL, cmd[256] = "", flatpak[256] = "", *v, *tags = NULL;
++	size_t sz = 0, i, len;
++	ssize_t n;
++	int inentry = 0, hidden = 0, ok = 0, terminal = 0, dev = 0;
++	struct app *a;
++
++	if (!(fp = fopen(path, "r")))
++		return;
++	while ((n = getline(&line, &sz, fp)) != -1) {
++		while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r'))
++			line[--n] = '\0';
++		if (line[0] == '[') {
++			inentry = !strcmp(line, "[Desktop Entry]");
++			continue;
++		}
++		if (!inentry || !(v = strchr(line, '=')))
++			continue;
++		*v++ = '\0';
++		/* only untranslated keys; Name[de]= etc. are skipped */
++		if (!strcmp(line, "Exec"))
++			ok = execcmd(v, cmd, sizeof cmd);
++		else if (!strcmp(line, "X-Flatpak"))
++			snprintf(flatpak, sizeof flatpak, "%s", v);
++		else if ((!strcmp(line, "NoDisplay") || !strcmp(line, "Hidden")) && !strcmp(v, "true"))
++			hidden = 1;
++		else if (!strcmp(line, "Terminal") && !strcmp(v, "true"))
++			terminal = 1;
++		else if (!strcmp(line, "Name") || !strcmp(line, "GenericName") ||
++		         !strcmp(line, "Keywords"))
++			appendtags(&tags, v, 1);
++		else if (!strcmp(line, "Categories")) {
++			appendtags(&tags, v, 1);
++			dev = strstr(v, "Development") != NULL;
++			for (i = 0; i < LENGTH(catsyn); i++) {
++				len = strlen(catsyn[i][0]);
++				/* match whole ';'-separated category names, case-insensitively */
++				for (char *c = v; (c = cistrstr(c, catsyn[i][0])); c += len)
++					if ((c == v || c[-1] == ';') && (c[len] == ';' || !c[len])) {
++						appendtags(&tags, catsyn[i][1], 0);
++						break;
++					}
++			}
++		}
++	}
++	free(line);
++	fclose(fp);
++	if (flatpak[0]) { /* flatpak apps run via flatpak, but export their app id as a command */
++		snprintf(cmd, sizeof cmd, "%s", flatpak);
++		ok = 1;
++	}
++	if (ok && !hidden && tags) {
++		a = getapp(cmd);
++		appendtags(&a->tags, tags, 0);
++		a->weight = MAX(a->weight, (terminal || dev) ? 350 : 700);
++	}
++	free(tags);
++}
++
++static void
++loaddesktopdir(const char *dir)
++{
++	DIR *d;
++	struct dirent *de;
++	char path[4096];
++	size_t n;
++
++	if (!(d = opendir(dir)))
++		return;
++	while ((de = readdir(d))) {
++		n = strlen(de->d_name);
++		if (n < 9 || strcmp(de->d_name + n - 8, ".desktop"))
++			continue;
++		snprintf(path, sizeof path, "%s/%s", dir, de->d_name);
++		loaddesktop(path);
++	}
++	closedir(d);
++}
++
++/* user tags, one command per line: "mousepad notes jot scratchpad" */
++static void
++loadusertags(const char *path)
++{
++	FILE *fp;
++	char *line = NULL, *s, *cmd;
++	size_t sz = 0;
++	struct app *a;
++
++	if (!(fp = fopen(path, "r")))
++		return;
++	while (getline(&line, &sz, fp) != -1) {
++		for (s = line; *s == ' ' || *s == '\t'; s++)
++			;
++		if (*s == '#' || !(cmd = strtok(s, " \t\n")))
++			continue;
++		a = getapp(cmd);
++		appendtags(&a->utags, (s = strtok(NULL, "\n")) ? s : "", 0);
++		a->weight = MAX(a->weight, 700);
++	}
++	free(line);
++	fclose(fp);
++}
++
++static void
++histpath(char *buf, size_t n, int mkdirs)
++{
++	const char *c = getenv("XDG_CACHE_HOME"), *h = getenv("HOME");
++
++	if (c && *c)
++		snprintf(buf, n, "%s/dmenu-greenleaf", c);
++	else
++		snprintf(buf, n, "%s/.cache/dmenu-greenleaf", h ? h : ".");
++	if (mkdirs) {
++		char *sl = strrchr(buf, '/');
++
++		*sl = '\0';
++		mkdir(buf, 0755); /* the cache dir itself may not exist yet */
++		*sl = '/';
++		mkdir(buf, 0755);
++	}
++	strncat(buf, "/history", n - strlen(buf) - 1);
++}
++
++static void
++loadhistory(void)
++{
++	FILE *fp;
++	char path[4096], *line = NULL, *cmd;
++	size_t sz = 0;
++	int count;
++
++	histpath(path, sizeof path, 0);
++	if (!(fp = fopen(path, "r")))
++		return;
++	while (getline(&line, &sz, fp) != -1) {
++		count = strtol(line, &cmd, 10);
++		if (count <= 0 || *cmd != ' ')
++			continue;
++		cmd[strcspn(cmd, "\n")] = '\0';
++		if (!*++cmd)
++			continue;
++		if (!(hist = realloc(hist, (nhist + 1) * sizeof *hist)))
++			die("realloc:");
++		hist[nhist].cmd = estrdup(cmd);
++		hist[nhist++].count = count;
++	}
++	free(line);
++	fclose(fp);
++}
++
++/* count one more launch of cmd; failures are ignored, history is only a hint */
++static void
++recordlaunch(const char *cmd)
++{
++	FILE *fp;
++	char path[4096], tmp[4200];
++	size_t i;
++	int found = 0;
++
++	if (!appmode || !*cmd || strchr(cmd, '\n'))
++		return;
++	histpath(path, sizeof path, 1);
++	snprintf(tmp, sizeof tmp, "%s.%ld", path, (long)getpid());
++	if (!(fp = fopen(tmp, "w")))
++		return;
++	for (i = 0; i < nhist; i++) {
++		if (!strcmp(hist[i].cmd, cmd)) {
++			hist[i].count++;
++			found = 1;
++		}
++		fprintf(fp, "%d %s\n", hist[i].count, hist[i].cmd);
++	}
++	if (!found)
++		fprintf(fp, "1 %s\n", cmd);
++	if (fclose(fp) == 0)
++		rename(tmp, path);
++	else
++		unlink(tmp);
++}
++
++static void
++loadapps(void)
++{
++	char buf[4096], *dirs, *d;
++	const char *home = getenv("HOME"), *xdh = getenv("XDG_DATA_HOME"), *xdd = getenv("XDG_DATA_DIRS");
++	struct item *item;
++	size_t i;
++
++	if (xdh && *xdh)
++		snprintf(buf, sizeof buf, "%s/applications", xdh);
++	else
++		snprintf(buf, sizeof buf, "%s/.local/share/applications", home ? home : ".");
++	loaddesktopdir(buf);
++	dirs = estrdup(xdd && *xdd ? xdd : "/usr/local/share:/usr/share");
++	for (d = strtok(dirs, ":"); d; d = strtok(NULL, ":")) {
++		snprintf(buf, sizeof buf, "%s/applications", d);
++		loaddesktopdir(buf);
++	}
++	free(dirs);
++	loaddesktopdir("/var/lib/flatpak/exports/share/applications");
++	snprintf(buf, sizeof buf, "%s/.local/share/flatpak/exports/share/applications", home ? home : ".");
++	loaddesktopdir(buf);
++	loadusertags("/etc/dmenu-greenleaf/tags"); /* system-wide defaults */
++	snprintf(buf, sizeof buf, "%s/.config/dmenu-greenleaf/tags", home ? home : ".");
++	loadusertags(buf);
++	loadhistory();
++
++	for (item = items; item && item->text; item++) {
++		for (i = 0; i < napps; i++)
++			if (!strcmp(apps[i].cmd, item->text)) {
++				item->app = apps[i].weight;
++				item->tags = apps[i].tags;
++				item->utags = apps[i].utags;
++				break;
++			}
++		for (i = 0; i < nhist; i++)
++			if (!strcmp(hist[i].cmd, item->text))
++				item->hist = hist[i].count;
++	}
++}
++
++/* best score of keyword tok against an item's tags; "notes" also tries "note" */
++static int
++tagscore(const char *tags, const char *tok)
++{
++	char v[3][64];
++	size_t vl[3], n = 0, i, wl, tl = strlen(tok);
++	const char *w;
++	int best = -1;
++
++	if (!tags || tl < 3 || tl >= sizeof v[0])
++		return -1;
++	for (i = 0; i <= tl; i++)
++		v[0][i] = tolower((unsigned char)tok[i]);
++	vl[n++] = tl;
++	if (tl > 4 && !strcmp(v[0] + tl - 3, "ies")) { /* stories -> story */
++		memcpy(v[n], v[0], tl - 3);
++		strcpy(v[n] + tl - 3, "y");
++		vl[n] = tl - 2;
++		n++;
++	} else if (tl > 3 && v[0][tl - 1] == 's') {    /* notes -> note */
++		memcpy(v[n], v[0], tl - 1);
++		v[n][tl - 1] = '\0';
++		vl[n++] = tl - 1;
++	}
++	if (tl > 5 && !strcmp(v[0] + tl - 3, "ing")) { /* writing -> writ(e) */
++		memcpy(v[n], v[0], tl - 3);
++		v[n][tl - 3] = '\0';
++		vl[n++] = tl - 3;
++	}
++	for (w = tags; *w; w += wl) {
++		while (*w == ' ')
++			w++;
++		for (wl = 0; w[wl] && w[wl] != ' '; wl++)
++			;
++		for (i = 0; i < n && wl; i++)
++			if (wl >= vl[i] && !strncmp(w, v[i], vl[i]))
++				best = MAX(best, wl == vl[i] ? 950 : 850);
++	}
++	return best;
++}
++
++static inline int
++foldc(int c)
++{
++	return casesens ? c : tolower((unsigned char)c);
++}
++
++static int
++isboundary(const char *str, const char *p)
++{
++	return p == str || strchr(" -_./:", p[-1]) || (isupper((unsigned char)*p) && islower((unsigned char)p[-1]));
++}
++
++/*
++ * fuzzy subsequence score of pattern pat (length n) in str starting at start:
++ * returns -1 if not every pattern character appears in order.
++ */
++static int
++fuzzyfrom(const char *str, const char *start, const char *pat, size_t n)
++{
++	const char *s = start, *last = NULL;
++	size_t i;
++	int score = 0;
++
++	for (i = 0; i < n; i++, s++) {
++		for (; *s && foldc(*s) != foldc(pat[i]); s++)
++			;
++		if (!*s)
++			return -1;
++		score += 16;
++		if (last && s == last + 1)
++			score += 24;                     /* consecutive characters */
++		else if (last)
++			score -= MIN(s - last - 1, 15);  /* gap penalty */
++		if (isboundary(str, s))
++			score += (s == str) ? 32 : 20;   /* start of item / start of a word */
++		last = s;
++	}
++	return score;
++}
++
++static int
++fuzzyscore(const char *str, const char *pat)
++{
++	size_t n = strlen(pat);
++	const char *s;
++	int best = -1, sc;
++
++	/* try every occurrence of the first pattern character as the anchor */
++	for (s = str; *s; s++) {
++		if (foldc(*s) != foldc(*pat))
++			continue;
++		if ((sc = fuzzyfrom(str, s, pat, n)) < 0)
++			break; /* later anchors cannot match either */
++		best = MAX(best, sc);
++	}
++	return best;
++}
++
++/*
++ * score an item against the space-separated keywords: every keyword must
++ * appear (in any order) either as a substring or, failing that, as a fuzzy
++ * subsequence. substring hits always outrank fuzzy hits.
++ */
++static int
++scoreitem(struct item *item, char **tokv, int tokc)
++{
++	const char *p, *str = item->text;
++	size_t len = strlen(str);
++	int i, sc, best, total = 0;
++
++	for (i = 0; i < tokc; i++) {
++		best = -1;
++		if ((p = fstrstr(str, tokv[i]))) {
++			best = 1000 - MIN(p - str, 50);
++			if (p == str)
++				best += 400;
++			else if (isboundary(str, p))
++				best += 200;
++			if (strlen(tokv[i]) == len)
++				best += 600; /* the keyword is the whole item */
++		}
++		best = MAX(best, tagscore(item->tags, tokv[i]));
++		if ((sc = tagscore(item->utags, tokv[i])) >= 0)
++			best = MAX(best, sc + 2000);
++		if (best < 0 && (sc = fuzzyscore(str, tokv[i])) >= 0)
++			best = sc;
++		if (best < 0)
++			return -1;
++		total += best;
++	}
++	return total - (int)MIN(len, 100) / 4; /* prefer shorter items */
++}
++
++/* app mode: desktop apps and frequently launched commands come first */
++static int
++boost(const struct item *item)
++{
++	return item->app + MIN(item->hist, 25) * 60;
++}
++
++static int
++itemcmp(const void *a, const void *b)
++{
++	const struct item *ia = *(struct item *const *)a, *ib = *(struct item *const *)b;
++
++	if (ia->score != ib->score)
++		return ib->score - ia->score;
++	return (ia < ib) ? -1 : (ia > ib); /* keep input order for ties */
++}
++
+ static void
+ match(void)
+ {
+ 	static char **tokv = NULL;
+ 	static int tokn = 0;
++	static struct item **sorted = NULL;
++	static size_t sortedn = 0;
+ 
+ 	char buf[sizeof text], *s;
+-	int i, tokc = 0;
+-	size_t len, textsize;
+-	struct item *item, *lprefix, *lsubstr, *prefixend, *substrend;
++	int tokc = 0;
++	size_t i, n = 0;
++	struct item *item;
+ 
+ 	strcpy(buf, text);
+-	/* separate input text into tokens to be matched individually */
++	/* separate input text into keywords to be matched individually */
+ 	for (s = strtok(buf, " "); s; tokv[tokc - 1] = s, s = strtok(NULL, " "))
+ 		if (++tokc > tokn && !(tokv = realloc(tokv, ++tokn * sizeof *tokv)))
+ 			die("cannot realloc %zu bytes:", tokn * sizeof *tokv);
+-	len = tokc ? strlen(tokv[0]) : 0;
+ 
+-	matches = lprefix = lsubstr = matchend = prefixend = substrend = NULL;
+-	textsize = strlen(text) + 1;
++	for (item = items; item && item->text; item++)
++		n++;
++	if (n > sortedn) {
++		if (!(sorted = realloc(sorted, n * sizeof *sorted)))
++			die("cannot realloc %zu bytes:", n * sizeof *sorted);
++		sortedn = n;
++	}
++
++	n = 0;
+ 	for (item = items; item && item->text; item++) {
+-		for (i = 0; i < tokc; i++)
+-			if (!fstrstr(item->text, tokv[i]))
+-				break;
+-		if (i != tokc) /* not all tokens match */
++		if ((item->score = tokc ? scoreitem(item, tokv, tokc) : 0) < 0)
+ 			continue;
+-		/* exact matches go first, then prefixes, then substrings */
+-		if (!tokc || !fstrncmp(text, item->text, textsize))
+-			appenditem(item, &matches, &matchend);
+-		else if (!fstrncmp(tokv[0], item->text, len))
+-			appenditem(item, &lprefix, &prefixend);
+-		else
+-			appenditem(item, &lsubstr, &substrend);
++		item->score += boost(item);
++		/* exact match of the whole input; in app mode only for apps and
++		 * commands launched before, so stray binaries do not jump ahead */
++		if (tokc && !(casesens ? strcmp : strcasecmp)(text, item->text))
++			item->score += (!appmode || item->app || item->hist) ? 5000 : 1000;
++		sorted[n++] = item;
+ 	}
+-	if (lprefix) {
+-		if (matches) {
+-			matchend->right = lprefix;
+-			lprefix->left = matchend;
+-		} else
+-			matches = lprefix;
+-		matchend = prefixend;
++	if (tokc || appmode)
++		qsort(sorted, n, sizeof *sorted, itemcmp);
++	tworows = appmode && lines == 0;
++	memset(rows, 0, sizeof rows);
++	for (i = 0; i < n; i++) {
++		struct row *r = &rows[tworows && sorted[i]->app < 700];
++		appenditem(sorted[i], &r->matches, &r->matchend);
++		r->n++;
+ 	}
+-	if (lsubstr) {
+-		if (matches) {
+-			matchend->right = lsubstr;
+-			lsubstr->left = matchend;
+-		} else
+-			matches = lsubstr;
+-		matchend = substrend;
++	for (i = 0; i < 2; i++) {
++		loadrow(i);
++		curr = sel = matches;
++		calcoffsets();
++		saverow();
+ 	}
+-	curr = sel = matches;
+-	calcoffsets();
++	/* start in the row holding the best match overall */
++	loadrow(!rows[0].matches || (rows[1].matches &&
++	        rows[1].matches->score > rows[0].matches->score));
+ }
+ 
+ static void
+@@ -320,6 +958,24 @@ movewordedge(int dir)
+ 	}
+ }
+ 
++static void
++selectup(void)
++{
++	if (sel && sel->left && (sel = sel->left)->right == curr) {
++		curr = prev;
++		calcoffsets();
++	}
++}
++
++static void
++selectdown(void)
++{
++	if (sel && sel->right && (sel = sel->right) == next) {
++		curr = next;
++		calcoffsets();
++	}
++}
++
+ static void
+ keypress(XKeyEvent *ev)
+ {
+@@ -468,10 +1124,11 @@ insert:
+ 		/* fallthrough */
+ 	case XK_Up:
+ 	case XK_KP_Up:
+-		if (sel && sel->left && (sel = sel->left)->right == curr) {
+-			curr = prev;
+-			calcoffsets();
++		if (tworows && ksym != XK_Left && ksym != XK_KP_Left) {
++			switchrow(arow - 1);
++			break;
+ 		}
++		selectup();
+ 		break;
+ 	case XK_Next:
+ 	case XK_KP_Next:
+@@ -491,6 +1148,7 @@ insert:
+ 	case XK_KP_Enter:
+ 		puts((sel && !(ev->state & ShiftMask)) ? sel->text : text);
+ 		if (!(ev->state & ControlMask)) {
++			recordlaunch((sel && !(ev->state & ShiftMask)) ? sel->text : text);
+ 			cleanup();
+ 			exit(0);
+ 		}
+@@ -508,10 +1166,11 @@ insert:
+ 		/* fallthrough */
+ 	case XK_Down:
+ 	case XK_KP_Down:
+-		if (sel && sel->right && (sel = sel->right) == next) {
+-			curr = next;
+-			calcoffsets();
++		if (tworows && ksym != XK_Right && ksym != XK_KP_Right) {
++			switchrow(arow + 1);
++			break;
+ 		}
++		selectdown();
+ 		break;
+ 	case XK_Tab:
+ 		if (!sel)
+@@ -527,6 +1186,84 @@ draw:
+ 	drawmenu();
+ }
+ 
++/* return the visible item under panel-relative coordinates, if any */
++static struct item *
++itemat(int x, int y, int *row)
++{
++	struct item *item;
++	int r;
++
++	saverow();
++	for (r = 0; r < (tworows ? 2 : 1); r++)
++		for (item = rows[r].curr; item && item != rows[r].next; item = item->right)
++			if (x >= item->rx && x < item->rx + item->rw &&
++			    y >= item->ry && y < item->ry + item->rh) {
++				*row = r;
++				return item;
++			}
++	return NULL;
++}
++
++static void
++buttonpress(XButtonEvent *ev)
++{
++	struct item *item;
++	int x = ev->x - px, y = ev->y - py, row;
++
++	if ((x < 0 || y < 0 || x >= pw || y >= ph) &&
++	    ev->button != Button4 && ev->button != Button5) {
++		/* click on the blurred backdrop closes dmenu; the wheel scrolls anywhere */
++		if (!embed) {
++			cleanup();
++			exit(1);
++		}
++		return;
++	}
++	switch (ev->button) {
++	case Button1:
++		if (!(item = itemat(x, y, &row)))
++			return;
++		puts(item->text);
++		if (!(ev->state & ControlMask)) {
++			recordlaunch(item->text);
++			cleanup();
++			exit(0);
++		}
++		switchrow(row);
++		sel = item;
++		item->out = 1;
++		break;
++	case Button2: /* paste primary selection into the text entry */
++		XConvertSelection(dpy, XA_PRIMARY, utf8, utf8, win, CurrentTime);
++		return;
++	case Button4: /* wheel up: scroll the row under the pointer */
++	case Button5: /* wheel down */
++		if (itemat(x, y, &row))
++			switchrow(row);
++		if (ev->button == Button4)
++			selectup();
++		else
++			selectdown();
++		break;
++	default:
++		return;
++	}
++	drawmenu();
++}
++
++static void
++motion(XMotionEvent *ev)
++{
++	struct item *item;
++	int row;
++
++	if (!(item = itemat(ev->x - px, ev->y - py, &row)) || item == sel)
++		return;
++	switchrow(row);
++	sel = item;
++	drawmenu();
++}
++
+ static void
+ paste(void)
+ {
+@@ -565,6 +1302,8 @@ readstdin(void)
+ 			die("strdup:");
+ 
+ 		items[i].out = 0;
++		items[i].tags = items[i].utags = NULL;
++		items[i].app = items[i].hist = 0;
+ 	}
+ 	free(line);
+ 	if (items)
+@@ -588,7 +1327,13 @@ run(void)
+ 			exit(1);
+ 		case Expose:
+ 			if (ev.xexpose.count == 0)
+-				drw_map(drw, win, 0, 0, mw, mh);
++				mappanel();
++			break;
++		case ButtonPress:
++			buttonpress(&ev.xbutton);
++			break;
++		case MotionNotify:
++			motion(&ev.xmotion);
+ 			break;
+ 		case FocusIn:
+ 			/* regrab focus from parent window */
+@@ -610,6 +1355,156 @@ run(void)
+ 	}
+ }
+ 
++/* separable box blur over an interleaved RGB buffer, with clamped edges */
++static void
++boxblur(unsigned int *buf, unsigned int *tmp, int w, int h, int r)
++{
++	int x, y, c, i, d = 2 * r + 1;
++	unsigned int acc;
++
++#define PX(b, xx, yy, cc) (b)[((yy) * w + (xx)) * 3 + (cc)]
++	for (y = 0; y < h; y++)
++		for (c = 0; c < 3; c++) {
++			for (acc = 0, i = -r; i <= r; i++)
++				acc += PX(buf, MAX(0, MIN(i, w - 1)), y, c);
++			for (x = 0; x < w; x++) {
++				PX(tmp, x, y, c) = acc / d;
++				acc += PX(buf, MIN(x + r + 1, w - 1), y, c);
++				acc -= PX(buf, MAX(x - r, 0), y, c);
++			}
++		}
++	for (x = 0; x < w; x++)
++		for (c = 0; c < 3; c++) {
++			for (acc = 0, i = -r; i <= r; i++)
++				acc += PX(tmp, x, MAX(0, MIN(i, h - 1)), c);
++			for (y = 0; y < h; y++) {
++				PX(buf, x, y, c) = acc / d;
++				acc += PX(tmp, x, MIN(y + r + 1, h - 1), c);
++				acc -= PX(tmp, x, MAX(y - r, 0), c);
++			}
++		}
++#undef PX
++}
++
++/*
++ * snapshot the screen area behind the menu, then downscale, blur, darken and
++ * upscale it into bgpix, which becomes the window background. on any failure
++ * bgpix stays None and dmenu falls back to a plain centred panel.
++ */
++static void
++makebackdrop(int x, int y, int w, int h)
++{
++	XImage *img;
++	unsigned int *buf, *tmp, one = 1, r, g, b, n;
++	int f = MAX(blurscale, 1), sw, sh, sx, sy, ix, iy, i, fast, *x0, *wx;
++	int F = MAX(spotfeather, 1), spot = spotdim * 256 / 100, *dxs, *lut, cx, cy, ax, ay, dy, d2;
++	unsigned long p;
++
++	if (blurradius <= 0 || w <= 0 || h <= 0)
++		return;
++	if (!(img = XGetImage(dpy, root, x, y, w, h, AllPlanes, ZPixmap)))
++		return;
++	if (img->bits_per_pixel != 32 || img->red_mask != 0xff0000 ||
++	    img->green_mask != 0xff00 || img->blue_mask != 0xff) {
++		XDestroyImage(img);
++		return;
++	}
++	fast = (img->byte_order == LSBFirst) == (*(unsigned char *)&one == 1);
++#define GETPX(xx, yy) (fast ? (unsigned long)((uint32_t *)(img->data + (yy) * img->bytes_per_line))[xx] : XGetPixel(img, xx, yy))
++
++	sw = (w + f - 1) / f;
++	sh = (h + f - 1) / f;
++	buf = ecalloc((size_t)sw * sh * 3, sizeof *buf);
++	tmp = ecalloc((size_t)sw * sh * 3, sizeof *tmp);
++	x0 = ecalloc(w, sizeof *x0);
++	wx = ecalloc(w, sizeof *wx);
++	dxs = ecalloc(w, sizeof *dxs);
++
++	/* extra darkening behind the text: an ellipse around the centred text
++	 * area, darkest in the middle and easing out continuously to nothing at
++	 * its rim, so there is no visible edge. squared normalised distances are
++	 * kept in 1/1024 units; lut maps them (>> 6) to a 0..256 multiplier. */
++	lut = ecalloc(1 << 14, sizeof *lut);
++	for (i = 0; i < 1024; i++) {
++		/* r in [0,1): full strength core up to 0.35, then smoothstep out */
++		int t = MAX(0, (i - 358) * 256 / (1024 - 358)), sm = t * t * (768 - 2 * t) >> 16;
++		for (d2 = (i * i) >> 6; d2 < (((i + 1) * (i + 1)) >> 6) && d2 < (1 << 14); d2++)
++			lut[d2] = spot + ((256 - spot) * sm >> 8);
++	}
++	cx = w / 2;
++	cy = h / 2;
++	ax = MAX(pw / 2 + F, 1);
++	ay = MAX(ph / 2 + F / 2, 1);
++	for (ix = 0; ix < w; ix++) {
++		int e = (ix - cx) * 1024 / ax;
++		dxs[ix] = (abs(e) < 1024) ? e * e : 1 << 20;
++	}
++
++	/* downscale by averaging f x f blocks, applying the dim factor */
++	for (sy = 0; sy < sh; sy++)
++		for (sx = 0; sx < sw; sx++) {
++			r = g = b = n = 0;
++			for (iy = sy * f; iy < MIN(sy * f + f, h); iy++)
++				for (ix = sx * f; ix < MIN(sx * f + f, w); ix++, n++) {
++					p = GETPX(ix, iy);
++					r += (p >> 16) & 0xff;
++					g += (p >> 8) & 0xff;
++					b += p & 0xff;
++				}
++			i = (sy * sw + sx) * 3;
++			buf[i]     = r * blurdim / (100 * n);
++			buf[i + 1] = g * blurdim / (100 * n);
++			buf[i + 2] = b * blurdim / (100 * n);
++		}
++
++	/* three box passes approximate a gaussian */
++	for (i = 0; i < 3; i++)
++		boxblur(buf, tmp, sw, sh, blurradius);
++
++	/* bilinear upscale back into the image, 8-bit fixed point weights */
++	for (ix = 0; ix < w; ix++) {
++		int fx = ((2 * ix + 1) * 256) / (2 * f) - 128;
++		fx = MAX(fx, 0);
++		x0[ix] = MIN(fx >> 8, sw - 1);
++		wx[ix] = (x0[ix] + 1 < sw) ? (fx & 0xff) : 0;
++	}
++	for (iy = 0; iy < h; iy++) {
++		int fy = ((2 * iy + 1) * 256) / (2 * f) - 128, y0, y1, wy;
++		fy = MAX(fy, 0);
++		y0 = MIN(fy >> 8, sh - 1);
++		y1 = MIN(y0 + 1, sh - 1);
++		wy = (y1 != y0) ? (fy & 0xff) : 0;
++		dy = (iy - cy) * 1024 / ay;
++		dy = (abs(dy) < 1024) ? dy * dy : 1 << 20;
++		for (ix = 0; ix < w; ix++) {
++			unsigned int c[3], k, *a = &buf[(y0 * sw + x0[ix]) * 3], *d = &buf[(y1 * sw + x0[ix]) * 3];
++			int bx = wx[ix] ? 3 : 0;
++			for (k = 0; k < 3; k++)
++				c[k] = ((a[k] * (256 - wx[ix]) + a[k + bx] * wx[ix]) * (256 - wy) +
++				        (d[k] * (256 - wx[ix]) + d[k + bx] * wx[ix]) * wy) >> 16;
++			if ((d2 = dxs[ix] + dy) < (1 << 20))
++				for (k = 0; k < 3; k++)
++					c[k] = c[k] * lut[d2 >> 6] >> 8;
++			p = (unsigned long)c[0] << 16 | c[1] << 8 | c[2];
++			if (fast)
++				((uint32_t *)(img->data + iy * img->bytes_per_line))[ix] = p;
++			else
++				XPutPixel(img, ix, iy, p);
++		}
++	}
++#undef GETPX
++
++	bgpix = XCreatePixmap(dpy, root, w, h, DefaultDepth(dpy, screen));
++	XPutImage(dpy, bgpix, DefaultGC(dpy, screen), img, 0, 0, 0, 0, w, h);
++	XDestroyImage(img);
++	free(buf);
++	free(tmp);
++	free(x0);
++	free(wx);
++	free(dxs);
++	free(lut);
++}
++
+ static void
+ setup(void)
+ {
+@@ -622,7 +1517,7 @@ setup(void)
+ 	XClassHint ch = {"dmenu", "dmenu"};
+ #ifdef XINERAMA
+ 	XineramaScreenInfo *info;
+-	Window pw;
++	Window pwin;
+ 	int a, di, n, area = 0;
+ #endif
+ 	/* init appearance */
+@@ -633,9 +1528,8 @@ setup(void)
+ 	utf8 = XInternAtom(dpy, "UTF8_STRING", False);
+ 
+ 	/* calculate menu geometry */
+-	bh = drw->fonts->h + 2;
+-	lines = MAX(lines, 0);
+-	mh = (lines + 1) * bh;
++	bh = normfnt->h + 2 * rowpad;
++	ibh = bigfnt->h + 2 * rowpad;
+ #ifdef XINERAMA
+ 	i = 0;
+ 	if (parentwin == root && (info = XineramaQueryScreens(dpy, &n))) {
+@@ -645,11 +1539,11 @@ setup(void)
+ 		else if (w != root && w != PointerRoot && w != None) {
+ 			/* find top-level window containing current input focus */
+ 			do {
+-				if (XQueryTree(dpy, (pw = w), &dw, &w, &dws, &du) && dws)
++				if (XQueryTree(dpy, (pwin = w), &dw, &w, &dws, &du) && dws)
+ 					XFree(dws);
+-			} while (w != root && w != pw);
++			} while (w != root && w != pwin);
+ 			/* find xinerama screen with which the window intersects most */
+-			if (XGetWindowAttributes(dpy, pw, &wa))
++			if (XGetWindowAttributes(dpy, pwin, &wa))
+ 				for (j = 0; j < n; j++)
+ 					if ((a = INTERSECT(wa.x, wa.y, wa.width, wa.height, info[j])) > area) {
+ 						area = a;
+@@ -663,8 +1557,9 @@ setup(void)
+ 					break;
+ 
+ 		x = info[i].x_org;
+-		y = info[i].y_org + (topbar ? 0 : info[i].height - mh);
++		y = info[i].y_org;
+ 		mw = info[i].width;
++		mh = info[i].height;
+ 		XFree(info);
+ 	} else
+ #endif
+@@ -673,20 +1568,46 @@ setup(void)
+ 			die("could not get embedding window attributes: 0x%lx",
+ 			    parentwin);
+ 		x = 0;
+-		y = topbar ? 0 : wa.height - mh;
++		y = 0;
+ 		mw = wa.width;
++		mh = wa.height;
+ 	}
++	/* centred panel: text entry row, separator, then the result rows */
++	pw = MIN((int)panelwidth, mw * 9 / 10);
++	ph = ibh + rowpad + (lines > 0 ? lines : (appmode ? 2 : 1)) * (bh + rowpad) + bh; /* + counter row */
++	ph = MIN(ph, mh);
++	drw_setfontset(drw, bigfnt);
+ 	promptw = (prompt && *prompt) ? TEXTW(prompt) - lrpad / 4 : 0;
+-	inputw = mw / 3; /* input width: ~33% of monitor width */
++	drw_setfontset(drw, normfnt);
+ 	match();
+ 
++	/* the window covers the whole monitor showing the blurred backdrop,
++	 * or, without a backdrop, just the panel itself */
++	if (!embed)
++		makebackdrop(x, y, mw, mh);
++	if (bgpix != None) {
++		px = (mw - pw) / 2;
++		py = (mh - ph) / 2;
++	} else {
++		x += (mw - pw) / 2;
++		y += (mh - ph) / 2;
++		mw = pw;
++		mh = ph;
++		px = py = 0;
++	}
++
+ 	/* create menu window */
++	cursor_arrow = XCreateFontCursor(dpy, XC_left_ptr);
+ 	swa.override_redirect = True;
+ 	swa.background_pixel = scheme[SchemeNorm][ColBg].pixel;
+-	swa.event_mask = ExposureMask | KeyPressMask | VisibilityChangeMask;
++	swa.background_pixmap = bgpix;
++	swa.cursor = cursor_arrow;
++	swa.event_mask = ExposureMask | KeyPressMask | VisibilityChangeMask |
++	                 ButtonPressMask | PointerMotionMask;
+ 	win = XCreateWindow(dpy, root, x, y, mw, mh, 0,
+ 	                    CopyFromParent, CopyFromParent, CopyFromParent,
+-	                    CWOverrideRedirect | CWBackPixel | CWEventMask, &swa);
++	                    CWOverrideRedirect | CWCursor | CWEventMask |
++	                    (bgpix != None ? CWBackPixmap : CWBackPixel), &swa);
+ 	XSetClassHint(dpy, win, &ch);
+ 
+ 	/* input methods */
+@@ -707,15 +1628,17 @@ setup(void)
+ 		}
+ 		grabfocus();
+ 	}
+-	drw_resize(drw, mw, mh);
++	drw_resize(drw, pw, ph);
++	drw->nobg = 1;
+ 	drawmenu();
+ }
+ 
+ static void
+ usage(void)
+ {
+-	die("usage: dmenu [-bfiv] [-l lines] [-p prompt] [-fn font] [-m monitor]\n"
+-	    "             [-nb color] [-nf color] [-sb color] [-sf color] [-w windowid]");
++	die("usage: dmenu [-abfisv] [-l lines] [-p prompt] [-lfn font] [-ifn font] [-m monitor]\n"
++	    "             [-pw width] [-br radius] [-nb color] [-nf color] [-sb color]\n"
++	    "             [-sf color] [-w windowid]");
+ }
+ 
+ int
+@@ -729,14 +1652,17 @@ main(int argc, char *argv[])
+ 		if (!strcmp(argv[i], "-v")) {      /* prints version information */
+ 			puts("dmenu-"VERSION);
+ 			exit(0);
+-		} else if (!strcmp(argv[i], "-b")) /* appears at the bottom of the screen */
+-			topbar = 0;
++		} else if (!strcmp(argv[i], "-b")) /* accepted for compatibility; dmenu is always centred */
++			;
+ 		else if (!strcmp(argv[i], "-f"))   /* grabs keyboard before reading stdin */
+ 			fast = 1;
+-		else if (!strcmp(argv[i], "-i")) { /* case-insensitive item matching */
+-			fstrncmp = strncasecmp;
+-			fstrstr = cistrstr;
+-		} else if (i + 1 == argc)
++		else if (!strcmp(argv[i], "-i"))   /* case-insensitive matching (the default) */
++			casesens = 0;
++		else if (!strcmp(argv[i], "-s"))   /* case-sensitive matching */
++			casesens = 1;
++		else if (!strcmp(argv[i], "-a"))   /* app mode: desktop apps first, tags, history */
++			appmode = 1;
++		else if (i + 1 == argc)
+ 			usage();
+ 		/* these options take one argument */
+ 		else if (!strcmp(argv[i], "-l"))   /* number of lines in vertical list */
+@@ -745,8 +1671,16 @@ main(int argc, char *argv[])
+ 			mon = atoi(argv[++i]);
+ 		else if (!strcmp(argv[i], "-p"))   /* adds prompt to left of input field */
+ 			prompt = argv[++i];
+-		else if (!strcmp(argv[i], "-fn"))  /* font or font set */
++		else if (!strcmp(argv[i], "-fn"))  /* ignored: fonts come from config.h (use -lfn) */
++			++i;
++		else if (!strcmp(argv[i], "-lfn")) /* font for the results */
+ 			fonts[0] = argv[++i];
++		else if (!strcmp(argv[i], "-ifn")) /* font for the prompt and text entry */
++			inputfonts[0] = argv[++i];
++		else if (!strcmp(argv[i], "-pw"))  /* panel width in pixels */
++			panelwidth = atoi(argv[++i]);
++		else if (!strcmp(argv[i], "-br"))  /* backdrop blur radius, 0 disables */
++			blurradius = atoi(argv[++i]);
+ 		else if (!strcmp(argv[i], "-nb"))  /* normal background color */
+ 			colors[SchemeNorm][ColBg] = argv[++i];
+ 		else if (!strcmp(argv[i], "-nf"))  /* normal foreground color */
+@@ -776,9 +1710,15 @@ main(int argc, char *argv[])
+ 		die("could not get embedding window attributes: 0x%lx",
+ 		    parentwin);
+ 	drw = drw_create(dpy, screen, root, wa.width, wa.height);
+-	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
++	if (!(bigfnt = drw_fontset_create(drw, inputfonts, LENGTH(inputfonts))))
++		fputs("warning: input font could not be loaded, using list font\n", stderr);
++	if (!(normfnt = drw_fontset_create(drw, fonts, LENGTH(fonts))))
+ 		die("no fonts could be loaded.");
+-	lrpad = drw->fonts->h;
++	if (!bigfnt)
++		bigfnt = normfnt;
++	if (casesens)
++		fstrstr = strstr;
++	lrpad = normfnt->h;
+ 
+ #ifdef __OpenBSD__
+ 	if (pledge("stdio rpath", NULL) == -1)
+@@ -792,6 +1732,8 @@ main(int argc, char *argv[])
+ 		readstdin();
+ 		grabkeyboard();
+ 	}
++	if (appmode)
++		loadapps();
+ 	setup();
+ 	run();
+ 
+diff --git a/dmenu_run b/dmenu_run
+index 834ede5..b72d731 100755
+--- a/dmenu_run
++++ b/dmenu_run
+@@ -1,2 +1,2 @@
+ #!/bin/sh
+-dmenu_path | dmenu "$@" | ${SHELL:-"/bin/sh"} &
++dmenu_path | dmenu -a "$@" | ${SHELL:-"/bin/sh"} &
+diff --git a/drw.c b/drw.c
+index 9fdd1a4..be10c9e 100644
+--- a/drw.c
++++ b/drw.c
+@@ -269,8 +269,10 @@ drw_text(Drw *drw, int x, int y, unsigned int w, unsigned int h, unsigned int lp
+ 	if (!render) {
+ 		w = invert ? invert : ~invert;
+ 	} else {
+-		XSetForeground(drw->dpy, drw->gc, drw->scheme[invert ? ColFg : ColBg].pixel);
+-		XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
++		if (!drw->nobg) {
++			XSetForeground(drw->dpy, drw->gc, drw->scheme[invert ? ColFg : ColBg].pixel);
++			XFillRectangle(drw->dpy, drw->drawable, drw->gc, x, y, w, h);
++		}
+ 		if (w < lpad)
+ 			return x + w;
+ 		d = XftDrawCreate(drw->dpy, drw->drawable,
+diff --git a/drw.h b/drw.h
+index 2ed77be..61ca994 100644
+--- a/drw.h
++++ b/drw.h
+@@ -24,6 +24,7 @@ typedef struct {
+ 	GC gc;
+ 	Clr *scheme;
+ 	Fnt *fonts;
++	int nobg; /* drw_text draws glyphs only, leaving the background as is */
+ } Drw;
+ 
+ /* Drawable abstraction */

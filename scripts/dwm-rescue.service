@@ -1,0 +1,12 @@
+[Unit]
+Description=Ctrl+Alt+Delete rescue for a stuck dwm session (restarts dwm in place)
+
+[Service]
+ExecStart=/usr/local/bin/dwm-rescue
+Restart=always
+RestartSec=2
+# stay responsive when the desktop is bogged down
+Nice=-10
+
+[Install]
+WantedBy=multi-user.target
