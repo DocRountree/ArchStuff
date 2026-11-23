@@ -194,6 +194,7 @@ static int getrootptr(int *x, int *y);
 static long getstate(Window w);
 static pid_t getstatusbarpid(void);
 static unsigned int getsystraywidth();
+static int traywidthright(Monitor *m);
 static int gettextprop(Window w, Atom atom, char *text, unsigned int size);
 static void grabbuttons(Client *c, int focused);
 static void grabkeys(void);
@@ -483,8 +484,8 @@ buttonpress(XEvent *e)
 			arg.ui = 1 << i;
 		} else if (ev->x < x + TEXTW(selmon->ltsymbol))
 			click = ClkLtSymbol;
-		else if (ev->x > selmon->ww - statusw - (int)getsystraywidth()) {
-			x = selmon->ww - statusw - getsystraywidth();
+		else if (ev->x > selmon->ww - statusw - traywidthright(selmon)) {
+			x = selmon->ww - statusw - traywidthright(selmon);
 			click = ClkStatusText;
 			statussig = 0;
 			for (text = s = stext; *s && x <= ev->x; s++) {
@@ -876,7 +877,7 @@ drawbar(Monitor *m)
 	drw_setscheme(drw, scheme[SchemeNorm]);
 	x = drw_text(drw, x, 0, w, bh, lrpad / 2, m->ltsymbol, 0);
 
-	if ((w = m->ww - tw - stw - x) > bh) {
+	if ((w = m->ww - tw - stw - x - (showsystray && systrayonleft && m == systraytomon(m) ? (int)getsystraywidth() + lrpad / 2 : 0)) > bh) {
 		if (m->sel) {
 			drw_setscheme(drw, scheme[m == selmon ? SchemeSel : SchemeNorm]);
 			drw_text(drw, x, 0, w, bh, lrpad / 2, m->sel->name, 0);
@@ -1029,6 +1030,13 @@ getatomprop(Client *c, Atom prop)
 		XFree(p);
 	}
 	return atom;
+}
+
+/* width taken by the systray at the right edge of m's bar (0 when it sits left of the status) */
+static int
+traywidthright(Monitor *m)
+{
+	return (showsystray && !systrayonleft && m == systraytomon(m)) ? (int)getsystraywidth() : 0;
 }
 
 unsigned int
@@ -2449,7 +2457,7 @@ updatesystray(void)
 	Client *i;
 	Monitor *m = systraytomon(NULL);
 	unsigned int x = m->mx + m->mw;
-	unsigned int sw = TEXTW(stext) - lrpad + systrayspacing;
+	unsigned int sw = statusw + systrayspacing; /* drawn status width (statuscmd markers excluded) */
 	unsigned int w = 1;
 
 	if (!showsystray)
