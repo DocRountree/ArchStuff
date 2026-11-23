@@ -148,64 +148,68 @@ index 53b393e..f60113c 100644
  
 diff --git a/fibonacci.c b/fibonacci.c
 new file mode 100644
-index 0000000..fce0a57
+index 0000000..861ba96
 --- /dev/null
 +++ b/fibonacci.c
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,70 @@
++/*
++ * fibonacci layouts (spiral and dwindle) with gaps.
++ *
++ * Each window takes part of the remaining area and hands the rest on:
++ * the master takes mfact of the width, every later window half of what is
++ * left, alternating vertical and horizontal splits. Spiral rotates the side
++ * each window takes (left, top, right, bottom); dwindle always takes the
++ * left/top part. Splits are exact (the rest gets any odd pixel), and like
++ * tile() there is gappx between windows and from every screen edge.
++ */
 +void
 +fibonacci(Monitor *mon, int s) {
-+	unsigned int i, n, nx, ny, nw, nh;
++	unsigned int i, n, g = mon->gappx;
++	int x, y, w, h, cw, ch, cx, cy, split = 1;
 +	Client *c;
 +
 +	for(n = 0, c = nexttiled(mon->clients); c; c = nexttiled(c->next), n++);
 +	if(n == 0)
 +		return;
-+	
-+	nx = mon->wx;
-+	ny = 0;
-+	nw = mon->ww;
-+	nh = mon->wh;
-+	
-+	for(i = 0, c = nexttiled(mon->clients); c; c = nexttiled(c->next)) {
-+		if((i % 2 && nh / 2 > 2 * c->bw)
-+		   || (!(i % 2) && nw / 2 > 2 * c->bw)) {
-+			if(i < n - 1) {
-+				if(i % 2)
-+					nh /= 2;
-+				else
-+					nw /= 2;
-+				if((i % 4) == 2 && !s)
-+					nx += nw;
-+				else if((i % 4) == 3 && !s)
-+					ny += nh;
++
++	/* remaining area, laid out without its left/top gap; every cell then
++	 * gives up one gap on its right and bottom */
++	x = mon->wx + g;
++	y = mon->wy + g;
++	w = mon->ww - g;
++	h = mon->wh - g;
++
++	for(i = 0, c = nexttiled(mon->clients); c; c = nexttiled(c->next), i++) {
++		cx = x; cy = y; cw = w; ch = h;
++		if(split && i < n - 1) {
++			if(i % 2 == 0) { /* split the width */
++				cw = (i == 0) ? (int)(w * mon->mfact) : w / 2;
++				if(cw <= 2 * c->bw + (int)g || w - cw <= 2 * c->bw + (int)g)
++					split = 0;
++				else if(s || i % 4 == 0) { /* take the left part */
++					x += cw;
++				} else {                   /* spiral: take the right part */
++					cx = x + w - cw;
++				}
++				if(split)
++					w -= cw;
++			} else {         /* split the height */
++				ch = h / 2;
++				if(ch <= 2 * c->bw + (int)g || h - ch <= 2 * c->bw + (int)g)
++					split = 0;
++				else if(s || i % 4 == 1) { /* take the top part */
++					y += ch;
++				} else {                   /* spiral: take the bottom part */
++					cy = y + h - ch;
++				}
++				if(split)
++					h -= ch;
 +			}
-+			if((i % 4) == 0) {
-+				if(s)
-+					ny += nh;
-+				else
-+					ny -= nh;
++			if(!split) { /* too small to split further: share the rest */
++				cx = x; cy = y; cw = w; ch = h;
 +			}
-+			else if((i % 4) == 1)
-+				nx += nw;
-+			else if((i % 4) == 2)
-+				ny += nh;
-+			else if((i % 4) == 3) {
-+				if(s)
-+					nx += nw;
-+				else
-+					nx -= nw;
-+			}
-+			if(i == 0)
-+			{
-+				if(n != 1)
-+					nw = mon->ww * mon->mfact;
-+				ny = mon->wy;
-+			}
-+			else if(i == 1)
-+				nw = mon->ww - nw;
-+			i++;
 +		}
-+		resize(c, nx, ny, nw - 2 * c->bw, nh - 2 * c->bw, False);
++		resize(c, cx, cy, cw - 2 * c->bw - g, ch - 2 * c->bw - g, False);
 +	}
 +}
 +
