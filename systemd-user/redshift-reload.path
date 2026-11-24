@@ -1,0 +1,9 @@
+# Restart redshift whenever its config is saved, so edits apply straight away.
+[Unit]
+Description=Watch redshift.conf
+
+[Path]
+PathChanged=%h/.config/redshift/redshift.conf
+
+[Install]
+WantedBy=default.target
