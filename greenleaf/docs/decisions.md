@@ -47,7 +47,7 @@ Only packages reach a fresh install, so only packages may carry the real configu
 | Dropped | Wallpaper slideshow over `~/Pictures`; sxhkd autostart (package stays installed) |
 | Display | Auto-detect (`xrandr --auto`) plus `arandr` for manual layouts |
 | Wallpapers | A curated folder supplied by the user → `greenleaf/wallpapers/`; falls back to solid accent color |
-| Audio | PipeWire (`pipewire-pulse`, `pipewire-alsa`, `wireplumber`) replaces PulseAudio |
+| Audio | PulseAudio (`pulseaudio`, `pulseaudio-alsa`, `pulseaudio-bluetooth`), same as the reference desktop; the bar and media keys use `pactl` |
 | Network | NetworkManager with `nm-applet` |
 
 ## Installer (Calamares)
@@ -90,7 +90,7 @@ same screens and branding. Only the install job sequence differs.
 The package list is `profile/packages.x86_64`, generated from the package picker (74 of 161
 explicit packages, plus distro plumbing). Changes from the picker:
 
-- `pulseaudio` → PipeWire stack
+- `pulseaudio` kept; `pulseaudio-alsa` and `pulseaudio-bluetooth` added
 - added: `networkmanager`, `network-manager-applet`, `arandr`, `amd-ucode`, `reflector`,
   installer and live-boot tooling
 - `nvidia-open`/`nvidia-utils` stay on the ISO but install only by choice (see above)

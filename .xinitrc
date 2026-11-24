@@ -17,6 +17,7 @@ dwmblocks &   # status bar (blocks: ~/.local/bin/sb-*, config: ~/dwmblocks/confi
 sxhkd &
 xscreensaver &
 picom &
+redshift &   # evening colour temperature (~/.config/redshift/redshift.conf)
 gnome-keyring &
 gnome-keyring-daemon &
 (sleep 5; signal-desktop --start-in-tray) &   # after dwm, so its system tray exists

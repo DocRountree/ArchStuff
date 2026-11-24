@@ -3,7 +3,7 @@
 # Wallpapers come from greenleaf/wallpapers/ (copied in by tools/build-repo.sh).
 pkgname=greenleaf-base
 pkgver=2026.12.01
-pkgrel=2
+pkgrel=3
 pkgdesc="Greenleaf session, branding and defaults"
 arch=('any')
 url="https://github.com/DocRountree/ArchStuff"
@@ -11,8 +11,9 @@ license=('0BSD')
 depends=('dwm-greenleaf' 'st-greenleaf' 'dmenu-greenleaf' 'dwmblocks-greenleaf' 'python'
          'xorg-server' 'xorg-xinit' 'xorg-xrandr' 'xorg-xsetroot'
          'feh' 'picom' 'xscreensaver' 'network-manager-applet'
-         'pipewire-pulse' 'wireplumber' 'zram-generator'
+         'pulseaudio' 'pulseaudio-alsa' 'zram-generator'
          'ttf-nerd-fonts-symbols' 'ttf-liberation-mono-nerd' 'ttf-dejavu')
+optdepends=('pulseaudio-bluetooth: Bluetooth headsets and speakers')
 backup=('etc/systemd/zram-generator.conf')
 install=greenleaf-base.install
 source=('greenleaf-session' 'greenleaf.desktop' 'xinitrc'

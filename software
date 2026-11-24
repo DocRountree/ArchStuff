@@ -3,6 +3,7 @@
 # Reinstall the repo packages: pacman -S --needed - < <(grep -v '^#' software | sed '/^$/,$d')
 
 alsa-utils
+archiso
 base
 base-devel
 bash-completion
@@ -53,6 +54,7 @@ otf-atkinsonhyperlegiblemono-nerd
 otf-commit-mono-nerd
 otf-geist-mono-nerd
 otf-opendyslexic-nerd
+pacman-contrib
 peazip
 picom
 playerctl
@@ -68,6 +70,7 @@ python-scipy
 python-seaborn
 qgis
 ragel
+redshift
 rsync
 scrot
 signal-desktop

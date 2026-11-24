@@ -1,4 +1,5 @@
-# sxhkd: the media/function keys above the F keys (dwm handles everything else).
+# sxhkd: the media/function keys above the F keys, plus the screenshot key
+# (dwm handles everything else).
 # Reload after editing: pkill -USR1 -x sxhkd
 #
 # Volume goes through sb-volume, so the keys behave exactly like scrolling and
@@ -39,3 +40,8 @@ XF86Search
 
 XF86Calculator
 	st -t calculator -e bc -lq
+
+# screenshot: drag a rectangle (or click a window), saved to ~/Pictures/Screenshots.
+# The @ runs it on key release; scrot can't grab the mouse while the keys are held.
+@super + shift + s
+	scrot -s ~/Pictures/Screenshots/'Screenshot from %Y-%m-%d %H-%M-%S.png'

@@ -41,10 +41,9 @@ zram-generator
 power-profiles-daemon
 sof-firmware
 alsa-utils
-pipewire
-pipewire-pulse
-pipewire-alsa
-wireplumber
+pulseaudio
+pulseaudio-alsa
+pulseaudio-bluetooth
 bluez
 bluez-utils
 networkmanager

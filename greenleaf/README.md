@@ -17,7 +17,7 @@ installer. Green accent `#405c28`.
   ("notes" finds Mousepad), apps first and developer tools on a second row
 - **st** with transparency and scrollback
 - **Ctrl+Alt+Delete** rescues a frozen dwm session (restarts dwm in place)
-- PipeWire, NetworkManager, zram swap, picom, xscreensaver
+- PulseAudio, NetworkManager, zram swap, picom, xscreensaver
 
 Design decisions and their reasons: [docs/decisions.md](docs/decisions.md).
 
