@@ -13,7 +13,7 @@ esac
 
 v=$(vol)
 if pactl get-sink-mute "$sink" | grep -q 'yes'; then
-	printf '%s muted\n' "󰖁"
+	printf '%s mute\n' "󰖁"     # 4 columns, same as "100%"
 else
-	printf '%s %s%%\n' "󰕾" "${v:-?}"
+	printf '%s %3s%%\n' "󰕾" "${v:-?}"
 fi

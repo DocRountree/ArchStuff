@@ -14,7 +14,7 @@ repo=$build/repo/x86_64
 db=$repo/greenleaf.db.tar.zst
 export PKGDEST=$build/pkgdest SRCDEST=$build/sources BUILDDIR=$build/work
 
-local_pkgs=(dmenu-greenleaf st-greenleaf dwm-greenleaf greenleaf-base)
+local_pkgs=(dmenu-greenleaf st-greenleaf dwm-greenleaf dwmblocks-greenleaf greenleaf-base)
 mapfile -t aur_pkgs < <(grep -vE '^\s*(#|$)' "$root/packages/aur.list")
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -45,7 +45,12 @@ build_local() {
         rm -rf "$dir/wallpapers"
         mkdir -p "$dir/wallpapers"
         find "$root/wallpapers" -maxdepth 1 -type f ! -name 'README.md' -exec cp -t "$dir/wallpapers" {} +
-        # Depends on the other Greenleaf packages, which live in our repo, not the system's.
+    fi
+    if grep -q "^depends=.*-greenleaf'" "$dir/PKGBUILD"; then
+        # Depends on other Greenleaf packages, which live in our repo, not the system's,
+        # so pacman can't resolve them: check only the build tools ourselves.
+        (cd "$dir" && makepkg --printsrcinfo | awk '$1 == "makedepends" { print $3 }' \
+            | xargs -r pacman -T >/dev/null) || die "$name: install its makedepends first"
         (cd "$dir" && makepkg --nodeps --cleanbuild --clean --force)
     else
         (cd "$dir" && makepkg --syncdeps --cleanbuild --clean --force --needed)

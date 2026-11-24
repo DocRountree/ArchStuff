@@ -1,0 +1,33 @@
+#!/bin/bash
+# sb-mem-view: memory popup. RAM and swap in use, what the RAM is used for,
+# and the programs using the most memory (processes grouped by program).
+. sb-view-lib
+
+view_start
+while :; do
+	eval "$(awk '{ sub(":", "", $1); v[$1] = $2 } END {
+		printf "total=%d avail=%d cache=%d swaptotal=%d swapfree=%d\n", v["MemTotal"], v["MemAvailable"],
+			v["Cached"] + v["Buffers"] + v["SReclaimable"], v["SwapTotal"], v["SwapFree"] }' /proc/meminfo)"
+	used=$((total - avail)); swapused=$((swaptotal - swapfree))
+	procs=$(ps -eo rss=,comm= | awk "$AWK_FRIENDLY"'
+		{ rss = $1; $1 = ""; sub(/^ /, ""); name = friendly($0); mem[name] += rss; cnt[name]++ }
+		END { for (k in mem) printf "%s\t%d\t%d\n", k, cnt[k], mem[k] }')
+
+	tput cup 0 0
+	printf '\033[1m'; row "Memory" $((100 * used / total)) "$(human_kib $used) / $(human_kib $total)"; printf '\033[0m'
+	if [ "$swaptotal" -gt 0 ]; then
+		row "Swap" $((100 * swapused / swaptotal)) "$(human_kib $swapused) / $(human_kib $swaptotal)"
+	fi
+	printf '\033[90m programs %s · cache %s (freed when needed) · free %s\033[0m\033[K\n\033[K\n' \
+		"$(human_kib $((used)))" "$(human_kib $cache)" "$(human_kib $((avail)))"
+
+	printf '\033[1m Biggest programs\033[0m \033[90m(memory in use)\033[0m\033[K\n'
+	shown=0
+	while IFS=$'\t' read -r name count mem; do
+		label=$name; [ "$count" -gt 1 ] && label="$name ×$count"
+		row "$label" $((100 * mem / total)) "$(printf '%6s' "$(human_kib "$mem")")"
+		shown=$((shown + 1)); [ "$shown" -ge 8 ] && break
+	done < <(echo "$procs" | sort -t$'\t' -k3,3 -rn)
+	view_footer
+	view_wait 2 || exit 0
+done

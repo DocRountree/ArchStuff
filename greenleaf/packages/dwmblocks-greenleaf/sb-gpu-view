@@ -1,0 +1,42 @@
+#!/bin/bash
+# sb-gpu-view: GPU usage popup (NVIDIA). Overall usage, video memory, vitals,
+# and the programs using the GPU with their video memory and load.
+. sb-view-lib
+
+view_start
+while :; do
+	IFS=', ' read -r util vused vtotal temp power plimit fan clock < <(nvidia-smi \
+		--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed,clocks.gr \
+		--format=csv,noheader,nounits)
+	name=$(nvidia-smi --query-gpu=name --format=csv,noheader); name=${name#NVIDIA }; name=${name#GeForce }
+	# per program: video memory (MB) and shader load (%), grouped by program name
+	procs=$(nvidia-smi pmon -c 1 -s um 2>/dev/null | awk "$AWK_FRIENDLY"'
+		/^#/ { next }
+		NF >= 12 {   # gpu pid type sm mem enc dec jpg ofa fb ccpm command
+			name = friendly($12); sm = ($4 == "-" ? 0 : $4); fb = ($10 == "-" ? 0 : $10)
+			load[name] += sm; mem[name] += fb; cnt[name]++
+		}
+		END { for (k in mem) printf "%s\t%d\t%d\t%d\n", k, cnt[k], mem[k], load[k] }')
+
+	tput cup 0 0
+	vpct=$(( vtotal > 0 ? 100 * vused / vtotal : 0 ))
+	printf '\033[1m'; row "GPU" "$util" "$(printf '%3d%%' "$util")"; printf '\033[0m'
+	row "Video memory" "$vpct" "$(human_kib $((vused * 1024))) / $(human_kib $((vtotal * 1024)))"
+	printf '\033[90m %s · %s°C · %.0f W of %.0f W · fan %s%% · %s MHz\033[0m\033[K\n\033[K\n' \
+		"$name" "$temp" "$power" "$plimit" "$fan" "$clock"
+
+	printf '\033[1m Programs using the GPU\033[0m \033[90m(video memory · load)\033[0m\033[K\n'
+	shown=0
+	while IFS=$'\t' read -r pname count mem load; do
+		label=$pname; [ "$count" -gt 1 ] && label="$pname ×$count"
+		pct=$(( vtotal > 0 ? 100 * mem / vtotal : 0 ))
+		val=$(printf '%6s' "$(human_kib $((mem * 1024)))")
+		[ "$load" -gt 0 ] && val="$val · ${load}%"
+		row "$label" "$pct" "$val"
+		shown=$((shown + 1)); [ "$shown" -ge 8 ] && break
+	done < <(echo "$procs" | sort -t$'\t' -k3,3 -rn)
+	[ "$shown" -eq 0 ] && printf '\033[90m nothing is using the GPU\033[0m\033[K\n' && shown=1
+	for ((k = shown; k < 8; k++)); do printf '\033[K\n'; done
+	view_footer
+	view_wait 2 || exit 0
+done

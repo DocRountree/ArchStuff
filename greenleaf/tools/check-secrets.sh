@@ -11,7 +11,7 @@ cd "$top"
 
 if [[ ${1:-} == --install-hook ]]; then
     hook=$(git rev-parse --git-path hooks)/pre-commit
-    printf '#!/bin/sh\nexec "%s" \n' 'greenleaf/tools/check-secrets.sh' > "$hook"
+    printf '#!/bin/sh\nexec "%s" \n' "$(realpath --relative-to="$top" "${BASH_SOURCE[0]}")" > "$hook"
     chmod +x "$hook"
     echo "Installed $hook"
     exit 0
@@ -24,7 +24,7 @@ else
 fi
 
 # Files that exist on purpose: the live ISO's user database (empty passwords by design).
-allow='^greenleaf/profile/airootfs/etc/(shadow|gshadow|passwd|group)$'
+allow='^(greenleaf/)?profile/airootfs/etc/(shadow|gshadow|passwd|group)$'   # works in ArchStuff and in the Greenleaf repo
 
 bad_names='(^|/)(id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|\.netrc|\.pgpass|.*\.(pem|key|p12|pfx|kdbx|gpg|asc)|known_hosts|authorized_keys|.*\.nmconnection|system-connections/.*|\.env(\..*)?|credentials(\.json)?|\.git-credentials)$'
 bad_content='-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|^\s*psk\s*=|/home/[a-z_][a-z0-9_-]*/'

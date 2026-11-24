@@ -1,8 +1,10 @@
 # Maintainer: Greenleaf
-# st 0.9.3 (upstream st.c) + official alpha patch, with the Greenleaf config.h (alpha 0.8).
+# st 0.9.3 (upstream st.c) + official alpha and scrollback patches, with the Greenleaf config.h
+# (alpha 0.8; 2000 lines of history: mouse wheel or Shift+PageUp/PageDown, and the wheel still
+# reaches full-screen programs like less and vim).
 pkgname=st-greenleaf
 pkgver=0.9.3
-pkgrel=1
+pkgrel=2
 _commit=688f70add0d1da8a416bf7df763328d694a24a3a
 pkgdesc="Simple terminal for X, Greenleaf edition"
 arch=('x86_64')
@@ -14,12 +16,24 @@ provides=('st')
 conflicts=('st')
 source=("st::git+https://git.suckless.org/st#commit=${_commit}"
         'st-alpha-20240814-a0274bc.diff'
+        'st-scrollback-0.9.2.diff'
+        'st-scrollback-mouse-0.9.2.diff'
+        'st-scrollback-mouse-altscreen-20220127-2c5edf2.diff'
         'config.h')
-sha256sums=('SKIP' '562f6a4baedeb89c8b6dfb2c2f14a69f9327fa8b71a5093e70219e39794b8d42' 'd4a12b09f81cc09fc1ee3cc8d815c48834a7af39a312c3fe6e82e02cd55bbbda')
+sha256sums=('0fc382bf88bdaf4d1783227285a2336e48812577f5474af6320b5787c4c0ad70'
+            '562f6a4baedeb89c8b6dfb2c2f14a69f9327fa8b71a5093e70219e39794b8d42'
+            '8db63bf83df06cba12cdb02e578cb49afc789c726b4c85f66e95b372562bac7a'
+            '5e1e57e12821c022807b33b4a950f1724bc2efeebd44323c3941f0bd652e1a19'
+            '8f2f17683f12d57b1c80461247fe15234f5f5a6fc52cdf48176c8358e699101d'
+            '444880d0c5b7b8a7f99c9f5506b90d973ee2d0ce118512c48ce22fbf8af2ac4d')
 
 prepare() {
   cd st
-  patch -Np1 -i "$srcdir/st-alpha-20240814-a0274bc.diff"
+  local p
+  for p in st-alpha-20240814-a0274bc.diff st-scrollback-0.9.2.diff \
+           st-scrollback-mouse-0.9.2.diff st-scrollback-mouse-altscreen-20220127-2c5edf2.diff; do
+    patch -Np1 -i "$srcdir/$p"
+  done
   cp "$srcdir/config.h" config.h
   # ncurses already ships the st terminfo entries; don't run tic outside $pkgdir.
   sed -i '/tic /d' Makefile

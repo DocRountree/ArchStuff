@@ -1,0 +1,18 @@
+#!/bin/sh
+# CPU usage since the previous update. Left click: top, sorted by CPU.
+case $BLOCK_BUTTON in
+	1) sb-popup cpu 62x19 sb-cpu-view ;;
+esac
+
+state=${XDG_RUNTIME_DIR:-/tmp}/sb-cpu.$(id -u)
+read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat
+total=$((user + nice + system + idle + iowait + irq + softirq + steal))
+idle=$((idle + iowait))
+pct=0
+if [ -r "$state" ]; then
+	read -r ptotal pidle < "$state"
+	dt=$((total - ptotal)); di=$((idle - pidle))
+	[ "$dt" -gt 0 ] && pct=$(( (100 * (dt - di) + dt / 2) / dt ))
+fi
+echo "$total $idle" > "$state"
+printf '%s %3s%%\n' "󰻠" "$pct"   # fixed width: the bar must not shift

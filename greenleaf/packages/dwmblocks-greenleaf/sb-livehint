@@ -1,0 +1,5 @@
+#!/bin/sh
+# Live ISO only: a hint in the status bar for starting the installer.
+# Prints nothing on an installed system, so the block disappears.
+[ -d /run/archiso ] && echo 'Alt+Shift+I installs Greenleaf'
+exit 0

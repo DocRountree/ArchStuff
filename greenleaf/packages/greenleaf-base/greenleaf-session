@@ -12,7 +12,7 @@ else
     xsetroot -solid '#405c28'
 fi
 
-greenleaf-statusbar &
+dwmblocks &   # status bar (dwmblocks-greenleaf; clickable blocks, clock centred)
 picom &
 nm-applet &
 

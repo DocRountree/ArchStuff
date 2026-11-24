@@ -1,0 +1,9 @@
+[Unit]
+Description=Snapshot home folder to /mnt/backup
+ConditionPathIsMountPoint=/mnt/backup
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/backup
+Nice=19
+IOSchedulingClass=idle

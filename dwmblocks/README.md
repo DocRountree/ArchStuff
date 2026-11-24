@@ -2,7 +2,7 @@ My dwmblocks-async status bar config
 
 Built from https://github.com/UtkarshVerma/dwmblocks-async (cloned to `~/dwmblocks`).
 
-- `config.h` — the blocks: CPU, memory, network, volume and clock, each a script in
+- `config.h` — the blocks: CPU, GPU, memory, network, volume and clock (centred by dwm), each a script in
   `scripts/` (`sb-*`, installed to `~/.local/bin`). Every block is clickable through
   dwm's statuscmd patch.
 - `unblock-signals.patch` — small fix so programs started from block click actions

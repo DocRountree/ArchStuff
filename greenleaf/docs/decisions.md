@@ -17,7 +17,8 @@ The source of truth for what Greenleaf is. Update this file when a decision chan
 ## Architecture rule
 
 Anything that must exist on an **installed** system ships inside a Greenleaf package
-(`greenleaf-base`, `dwm-greenleaf`, `st-greenleaf`, `dmenu-greenleaf`). The archiso
+(`greenleaf-base`, `dwm-greenleaf`, `st-greenleaf`, `dmenu-greenleaf`,
+`dwmblocks-greenleaf`). The archiso
 `airootfs/` holds **live-only** files (live user, SDDM autologin, installer launcher).
 
 The reason: there are two install modes (copy the live image, or download fresh packages).
@@ -38,12 +39,15 @@ Only packages reach a fresh install, so only packages may carry the real configu
 | Login | TTY login, then `startx` (no display manager); SDDM removed after install |
 | Session | `~/.xinitrc` runs `greenleaf-session`, which sets up the desktop and execs dwm |
 | dwm modifier | Alt (unchanged) |
-| Kept personal touches | Status-bar clock, st transparency 0.8, picom, xscreensaver |
+| Kept personal touches | st transparency 0.8, picom, xscreensaver |
+| Status bar | `dwmblocks-greenleaf`: CPU, GPU (NVIDIA only), memory, network down/up speed, volume, and the date and time centred in the bar. Every block is clickable (usage views, mute/scroll volume, addresses, calendar); numbers are fixed-width so the bar never shifts |
+| Terminal | st with scrollback (2000 lines; mouse wheel or Shift+PageUp/PageDown, the wheel still reaches less/vim) |
+| Frozen-session rescue | `dwm-rescue` service (in `greenleaf-base`, enabled by preset): Ctrl+Alt+Delete restarts dwm in place, windows stay open; a snapshot goes to `/var/log/dwm-rescue/` |
 | System tray | dwm systray patch, right side of the bar, follows the selected monitor |
 | Dropped | Wallpaper slideshow over `~/Pictures`; sxhkd autostart (package stays installed) |
 | Display | Auto-detect (`xrandr --auto`) plus `arandr` for manual layouts |
 | Wallpapers | A curated folder supplied by the user → `greenleaf/wallpapers/`; falls back to solid accent color |
-| Audio | PipeWire (`pipewire-pulse`, `pipewire-alsa`, `wireplumber`) replaces PulseAudio |
+| Audio | PulseAudio (`pulseaudio`, `pulseaudio-alsa`, `pulseaudio-bluetooth`), same as the reference desktop; the bar and media keys use `pactl` |
 | Network | NetworkManager with `nm-applet` |
 
 ## Installer (Calamares)
@@ -86,7 +90,7 @@ same screens and branding. Only the install job sequence differs.
 The package list is `profile/packages.x86_64`, generated from the package picker (74 of 161
 explicit packages, plus distro plumbing). Changes from the picker:
 
-- `pulseaudio` → PipeWire stack
+- `pulseaudio` kept; `pulseaudio-alsa` and `pulseaudio-bluetooth` added
 - added: `networkmanager`, `network-manager-applet`, `arandr`, `amd-ucode`, `reflector`,
   installer and live-boot tooling
 - `nvidia-open`/`nvidia-utils` stay on the ISO but install only by choice (see above)
@@ -95,11 +99,10 @@ AUR packages, built into the local `[greenleaf]` repo: see `packages/aur.list`.
 
 ## Notes and open items
 
-- **st:** the `st.c` in this repo and in `~/st` is an *older* copy that undoes upstream fixes
-  (including a crash guard in `tsetdirt`). It adds no features, so `st-greenleaf` builds
-  upstream `st.c` with your `config.h`.
+- **st:** `st-greenleaf` and `~/st` both build upstream st (688f70a) with the official alpha
+  and scrollback patches (`st/` in this repo has the patches, `config.h` and the resulting `st.c`).
 - **System tray:** dwm-greenleaf includes the official systray patch (`dwm-systray-6.8.diff`,
   three hunks adapted by hand to sit on top of the fibonacci and gaps patches), so `nm-applet`
   shows in the bar. Settings are the `systray*` lines in `packages/dwm-greenleaf/config.h`.
-- **google-earth-pro:** Google's terms may not allow redistribution inside an ISO. Consider
-  installing it on first boot instead of shipping it.
+- **google-earth-pro:** not shipped. Google's terms don't allow redistributing it, and the
+  ISO and package repo are public, so users install it from the AUR (`yay -S google-earth-pro`).

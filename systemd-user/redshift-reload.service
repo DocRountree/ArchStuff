@@ -1,0 +1,8 @@
+# Started by redshift-reload.path. try-restart: only if redshift is running
+# (it is started from ~/.xinitrc, since it needs the X display).
+[Unit]
+Description=Restart redshift after its config changed
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl --user try-restart redshift.service

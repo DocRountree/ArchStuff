@@ -1,0 +1,2 @@
+# Greenleaf: Ctrl+Alt+Delete unfreezes a stuck dwm session
+enable dwm-rescue.service

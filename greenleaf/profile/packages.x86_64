@@ -32,6 +32,7 @@ greenleaf-base
 dwm-greenleaf
 st-greenleaf
 dmenu-greenleaf
+dwmblocks-greenleaf
 
 # ---- Core system ----
 base-devel
@@ -40,10 +41,9 @@ zram-generator
 power-profiles-daemon
 sof-firmware
 alsa-utils
-pipewire
-pipewire-pulse
-pipewire-alsa
-wireplumber
+pulseaudio
+pulseaudio-alsa
+pulseaudio-bluetooth
 bluez
 bluez-utils
 networkmanager
@@ -106,8 +106,8 @@ zathura
 zathura-djvu
 
 # ---- Science, maps and data ----
-# google-earth-pro: check Google's terms before distributing the ISO (see docs/decisions.md)
-google-earth-pro
+# google-earth-pro: left out. Google's terms don't allow redistributing it in a public ISO;
+# install it from the AUR after installing (yay -S google-earth-pro).
 python-matplotlib
 python-pandas
 python-scipy

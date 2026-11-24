@@ -1,7 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 # Date and time (same format as before). Left click: three-month calendar.
 case $BLOCK_BUTTON in
 	1) sb-popup clock 66x11 --hold cal -3 ;;
 esac
 
-date '+%A, %e %B %H:%M'
+# centred in a fixed 29 columns (the longest: "Wednesday, 30 September 12:00"),
+# so the clock doesn't move when the day or month name changes length
+d=$(date '+%A, %e %B %H:%M')
+w=29 n=${#d}
+printf '%*s%s%*s\n' $(( (w - n) / 2 )) '' "$d" $(( w - n - (w - n) / 2 )) ''

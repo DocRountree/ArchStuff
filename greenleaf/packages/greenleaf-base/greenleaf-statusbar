@@ -1,8 +1,0 @@
-#!/bin/sh
-# dwm status bar: the date and time, plus an install hint on the live ISO.
-hint=""
-[ -d /run/archiso ] && hint="Alt+Shift+I installs Greenleaf  |  "
-while true; do
-    xsetroot -name "${hint}$(date '+%A %e %B %H:%M')"
-    sleep 1
-done

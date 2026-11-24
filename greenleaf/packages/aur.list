@@ -5,5 +5,5 @@ calamares
 yay
 lightcraft
 photocraft
-# Check Google's terms before distributing an ISO that contains this:
-google-earth-pro
+# google-earth-pro: not built or shipped (Google's terms don't allow redistribution);
+# users install it from the AUR themselves.
